@@ -19,6 +19,7 @@ mod platform;
 mod settings;
 mod settings_window;
 mod tray;
+mod updater;
 
 use anyhow::Result;
 use winit::event_loop::EventLoop;
@@ -74,7 +75,11 @@ fn main() -> Result<()> {
 
     instance::listen(event_loop.create_proxy());
 
-    let mut app = App::new(args.iter().any(|a| a == "--capture"), settings)?;
+    let mut app = App::new(
+        args.iter().any(|a| a == "--capture"),
+        settings,
+        event_loop.create_proxy(),
+    )?;
     event_loop.run_app(&mut app)?;
     Ok(())
 }

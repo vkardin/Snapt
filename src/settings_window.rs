@@ -40,8 +40,22 @@ pub enum Action {
     OpenFolder,
     Format(Format),
     QuickSave,
+    AutoUpdate,
+    CheckUpdates,
+    InstallUpdate,
     Website,
     Close,
+}
+
+/// Where the update check stands, shown under the update switch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UpdateStatus {
+    Idle,
+    Checking,
+    UpToDate,
+    Available(String),
+    Downloading,
+    Failed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -55,6 +69,9 @@ enum Id {
     OpenFolder,
     Format(Format),
     QuickSave,
+    AutoUpdate,
+    CheckUpdates,
+    InstallUpdate,
     Website,
     Done,
 }
@@ -68,7 +85,7 @@ pub enum Notice {
 }
 
 const WIDTH: f64 = 560.0;
-const HEIGHT: f64 = 624.0;
+const HEIGHT: f64 = 712.0;
 
 const BG: u32 = 0x18181B;
 const CARD: u32 = 0x222227;
@@ -126,9 +143,9 @@ impl SettingsWindow {
     }
 
     /// Shows the window, drawn for `settings`, in front of everything.
-    pub fn show(&mut self, settings: &Settings) {
+    pub fn show(&mut self, settings: &Settings, update: &UpdateStatus) {
         self.window.set_title(t(T::SettingsTitle));
-        self.redraw(settings);
+        self.redraw(settings, update);
         self.window.set_visible(true);
         self.window.set_minimized(false);
         self.window.focus_window();
@@ -144,10 +161,15 @@ impl SettingsWindow {
     }
 
     /// Handles an event; returns what the user changed, if anything.
-    pub fn window_event(&mut self, event: WindowEvent, settings: &Settings) -> Option<Action> {
+    pub fn window_event(
+        &mut self,
+        event: WindowEvent,
+        settings: &Settings,
+        update: &UpdateStatus,
+    ) -> Option<Action> {
         match event {
             WindowEvent::CloseRequested => return Some(self.close()),
-            WindowEvent::RedrawRequested => self.redraw(settings),
+            WindowEvent::RedrawRequested => self.redraw(settings, update),
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
                 self.window.request_redraw();
             }
@@ -230,6 +252,9 @@ impl SettingsWindow {
             Id::OpenFolder => Action::OpenFolder,
             Id::Format(f) => Action::Format(f),
             Id::QuickSave => Action::QuickSave,
+            Id::AutoUpdate => Action::AutoUpdate,
+            Id::CheckUpdates => Action::CheckUpdates,
+            Id::InstallUpdate => Action::InstallUpdate,
             Id::Website => Action::Website,
             Id::Done => self.close(),
         })
@@ -276,7 +301,7 @@ impl SettingsWindow {
         }
     }
 
-    fn redraw(&mut self, settings: &Settings) {
+    fn redraw(&mut self, settings: &Settings, update: &UpdateStatus) {
         let size = self.window.inner_size();
         let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
             return;
@@ -300,7 +325,7 @@ impl SettingsWindow {
             0.0,
             BG,
         );
-        build(&mut ui, settings, self.recording, self.notice);
+        build(&mut ui, settings, update, self.recording, self.notice);
         self.hits = ui.hits;
 
         let mut buffer = match self.surface.buffer_mut() {
@@ -366,14 +391,20 @@ fn hotkey_from(modifiers: ModifiersState, code: KeyCode) -> Option<String> {
 }
 
 /// Lays out and draws the whole window. Units are logical pixels.
-fn build(ui: &mut Ui, settings: &Settings, recording: bool, notice: Option<Notice>) {
+fn build(
+    ui: &mut Ui,
+    settings: &Settings,
+    update: &UpdateStatus,
+    recording: bool,
+    notice: Option<Notice>,
+) {
     let margin = 24.0;
     let label_x = margin + 16.0;
     let control_x = 190.0;
     let right = WIDTH as f32 - margin - 16.0;
 
     // General
-    let mut y = ui.section(t(T::General), margin, 16.0, 100.0);
+    let mut y = ui.section(t(T::General), margin, 16.0, 188.0);
     ui.label(t(T::Language), label_x, y + 8.0, 14.0, TEXT);
     let mut options = vec![(t(T::SystemLanguage), None)];
     options.extend(Lang::ALL.iter().map(|l| (l.name(), Some(*l))));
@@ -401,9 +432,40 @@ fn build(ui: &mut Ui, settings: &Settings, recording: bool, notice: Option<Notic
         y,
         settings.autostart,
     );
+    y += 40.0;
+    ui.switch(
+        Id::AutoUpdate,
+        t(T::AutoUpdate),
+        label_x,
+        y,
+        settings.auto_update,
+    );
+    y += 36.0;
+    let status_x = label_x + 46.0;
+    let (status, color) = match update {
+        UpdateStatus::Idle => (format!("Snapt {}", env!("CARGO_PKG_VERSION")), MUTED),
+        UpdateStatus::Checking => (t(T::Checking).into(), MUTED),
+        UpdateStatus::UpToDate => (t(T::UpToDate).into(), MUTED),
+        UpdateStatus::Available(v) => (t(T::UpdateAvailable).replace("{}", v), TEXT),
+        UpdateStatus::Downloading => (t(T::Downloading).into(), MUTED),
+        UpdateStatus::Failed => (t(T::UpdateFailed).into(), ERROR),
+    };
+    match update {
+        UpdateStatus::Available(_) => {
+            ui.button(Id::InstallUpdate, t(T::InstallUpdate), status_x, y, true)
+        }
+        UpdateStatus::Checking | UpdateStatus::Downloading => {}
+        _ => ui.button(Id::CheckUpdates, t(T::CheckNow), status_x, y, false),
+    }
+    let button_w = match update {
+        UpdateStatus::Available(_) => font::measure(t(T::InstallUpdate), 13.0).0 + 40.0 + 12.0,
+        UpdateStatus::Checking | UpdateStatus::Downloading => 0.0,
+        _ => font::measure(t(T::CheckNow), 13.0).0 + 24.0 + 12.0,
+    };
+    ui.label(&status, status_x + button_w, y + 9.0, 13.0, color);
 
     // Capture
-    y = ui.section(t(T::Capture), margin, 156.0, 172.0);
+    y = ui.section(t(T::Capture), margin, 244.0, 172.0);
     ui.label(t(T::Shortcut), label_x, y + 8.0, 14.0, TEXT);
     let field = if recording {
         t(T::PressShortcut).to_string()
@@ -442,7 +504,7 @@ fn build(ui: &mut Ui, settings: &Settings, recording: bool, notice: Option<Notic
     ui.wrapped(hint, label_x + 46.0, y, right - label_x - 46.0, 12.0, color);
 
     // Saving
-    y = ui.section(t(T::Saving), margin, 368.0, 160.0);
+    y = ui.section(t(T::Saving), margin, 456.0, 160.0);
     ui.label(t(T::Folder), label_x, y + 8.0, 14.0, TEXT);
     let open_w = font::measure(t(T::Open), 13.0).0 + 24.0;
     let change_w = font::measure(t(T::Change), 13.0).0 + 24.0;
@@ -710,7 +772,8 @@ mod tests {
                 hover: None,
                 hits: Vec::new(),
             };
-            build(&mut ui, &Settings::default(), false, None);
+            let update = UpdateStatus::Available("9.9.9".into());
+            build(&mut ui, &Settings::default(), &update, false, None);
             for (id, r) in &ui.hits {
                 assert!(
                     r.right() <= WIDTH as f32 - 20.0 && r.bottom() <= HEIGHT as f32,
