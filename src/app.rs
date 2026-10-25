@@ -4,7 +4,7 @@ use tray_icon::menu::MenuEvent;
 use winit::{
     application::ApplicationHandler,
     event::{StartCause, WindowEvent},
-    event_loop::{ActiveEventLoop, ControlFlow},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy},
     window::WindowId,
 };
 
@@ -13,8 +13,9 @@ use crate::{
     overlay::{Outcome, Overlay, Style},
     platform,
     settings::{self, DEFAULT_HOTKEY, Settings},
-    settings_window::{Action, Notice, SettingsWindow},
+    settings_window::{Action, Notice, SettingsWindow, UpdateStatus},
     tray::{Command, Tray},
+    updater::{self, Update},
 };
 
 /// Events sent into the winit loop from tray, hotkey and other-instance callbacks.
@@ -26,6 +27,10 @@ pub enum UserEvent {
     Capture,
     /// Another copy of Snapt was started with `--settings`.
     Settings,
+    /// An update check finished; the flag tells whether the user asked for it.
+    UpdateChecked(Result<Option<Update>, String>, bool),
+    /// The installer of an update was downloaded.
+    UpdateDownloaded(Result<std::path::PathBuf, String>),
 }
 
 pub struct App {
@@ -40,12 +45,20 @@ pub struct App {
     capture_now: bool,
     settings_now: bool,
     output: output::Output,
+    proxy: EventLoopProxy<UserEvent>,
+    update: Option<Update>,
+    update_status: UpdateStatus,
+    watching_updates: bool,
 }
 
 impl App {
     /// `capture_now` opens the overlay as soon as the app starts, `settings_now`
     /// the settings window.
-    pub fn new(capture_now: bool, settings_now: bool) -> Result<Self> {
+    pub fn new(
+        capture_now: bool,
+        settings_now: bool,
+        proxy: EventLoopProxy<UserEvent>,
+    ) -> Result<Self> {
         let hotkeys = GlobalHotKeyManager::new().context("failed to start the hotkey manager")?;
         let settings = Settings::load();
         i18n::set(settings.lang());
@@ -66,8 +79,15 @@ impl App {
             capture_now,
             settings_now,
             output: output::Output::new()?,
+            proxy,
+            update: None,
+            update_status: UpdateStatus::Idle,
+            watching_updates: false,
         };
         app.register_hotkey();
+        if app.settings.auto_update {
+            app.watch_updates();
+        }
         Ok(app)
     }
 
@@ -173,7 +193,50 @@ impl App {
             Command::Capture => self.start_capture(event_loop),
             Command::OpenFolder => self.open_folder(),
             Command::Settings => self.open_settings(event_loop),
+            Command::Update => self.start_update(),
             Command::Quit => event_loop.exit(),
+        }
+    }
+
+    fn watch_updates(&mut self) {
+        if !self.watching_updates {
+            self.watching_updates = true;
+            updater::watch(self.proxy.clone());
+        }
+    }
+
+    /// Recreates the tray, e.g. after a language change or when an update is out.
+    fn rebuild_tray(&mut self) {
+        self.tray = None;
+        let version = self.update.as_ref().map(|u| u.version.as_str());
+        match Tray::new(&self.settings, version) {
+            Ok(tray) => self.tray = Some(tray),
+            Err(err) => log::error!("failed to create the tray icon: {err:#}"),
+        }
+    }
+
+    /// Downloads the update, or opens the download page when this kind of
+    /// install can't update itself.
+    fn start_update(&mut self) {
+        let Some(update) = self.update.clone() else {
+            return;
+        };
+        if update.asset.is_none() {
+            if let Err(err) = open::that_detached(updater::RELEASES) {
+                log::error!("failed to open the releases page: {err}");
+            }
+            return;
+        }
+        if self.update_status != UpdateStatus::Downloading {
+            self.update_status = UpdateStatus::Downloading;
+            updater::download(self.proxy.clone(), update);
+            self.redraw_settings();
+        }
+    }
+
+    fn redraw_settings(&self) {
+        if let Some(window) = &self.settings_window {
+            window.request_redraw();
         }
     }
 
@@ -195,7 +258,7 @@ impl App {
             }
         }
         if let Some(window) = &mut self.settings_window {
-            window.show(&self.settings);
+            window.show(&self.settings, &self.update_status);
         }
     }
 
@@ -213,11 +276,7 @@ impl App {
                 self.settings.language = lang;
                 i18n::set(self.settings.lang());
                 // Menu texts can't all be changed in place, so the tray is rebuilt.
-                self.tray = None;
-                match Tray::new(&self.settings) {
-                    Ok(tray) => self.tray = Some(tray),
-                    Err(err) => log::error!("failed to rebuild the tray icon: {err:#}"),
-                }
+                self.rebuild_tray();
                 if let Some(window) = &self.settings_window {
                     window.retitle();
                 }
@@ -262,6 +321,17 @@ impl App {
             Action::OpenFolder => self.open_folder(),
             Action::Format(format) => self.settings.format = format,
             Action::QuickSave => self.settings.quick_save = !self.settings.quick_save,
+            Action::AutoUpdate => {
+                self.settings.auto_update = !self.settings.auto_update;
+                if self.settings.auto_update {
+                    self.watch_updates();
+                }
+            }
+            Action::CheckUpdates => {
+                self.update_status = UpdateStatus::Checking;
+                updater::check_now(self.proxy.clone());
+            }
+            Action::InstallUpdate => self.start_update(),
             Action::Website => {
                 if let Err(err) = open::that_detached(env!("CARGO_PKG_HOMEPAGE")) {
                     log::error!("failed to open the website: {err}");
@@ -299,10 +369,7 @@ impl ApplicationHandler<UserEvent> for App {
         // On macOS the tray must be created once the event loop is running.
         if cause == StartCause::Init {
             event_loop.set_control_flow(ControlFlow::Wait);
-            match Tray::new(&self.settings) {
-                Ok(tray) => self.tray = Some(tray),
-                Err(err) => log::error!("failed to create the tray icon: {err:#}"),
-            }
+            self.rebuild_tray();
             if platform::is_wayland() {
                 log::info!(
                     "Wayland has no global shortcuts for apps: bind `snapt --capture` to a key in the system settings"
@@ -330,6 +397,42 @@ impl ApplicationHandler<UserEvent> for App {
             }
             UserEvent::Capture => self.start_capture(event_loop),
             UserEvent::Settings => self.open_settings(event_loop),
+            UserEvent::UpdateChecked(result, manual) => {
+                // The daily check stays quiet unless the user turned it off meanwhile.
+                if !manual && !self.settings.auto_update {
+                    return;
+                }
+                match result {
+                    Ok(Some(update)) => {
+                        log::info!("Snapt {} is available", update.version);
+                        self.update_status = UpdateStatus::Available(update.version.clone());
+                        if self.update.as_ref() != Some(&update) {
+                            self.update = Some(update);
+                            self.rebuild_tray();
+                        }
+                    }
+                    Ok(None) => self.update_status = UpdateStatus::UpToDate,
+                    Err(err) => {
+                        log::warn!("update check failed: {err}");
+                        self.update_status = UpdateStatus::Failed;
+                    }
+                }
+                self.redraw_settings();
+            }
+            UserEvent::UpdateDownloaded(Ok(path)) => match updater::install(&path) {
+                // Quit so the installer can replace Snapt.
+                Ok(()) => event_loop.exit(),
+                Err(err) => {
+                    log::error!("failed to install the update: {err:#}");
+                    self.update_status = UpdateStatus::Failed;
+                    self.redraw_settings();
+                }
+            },
+            UserEvent::UpdateDownloaded(Err(err)) => {
+                log::error!("failed to download the update: {err}");
+                self.update_status = UpdateStatus::Failed;
+                self.redraw_settings();
+            }
             UserEvent::Menu(event) => {
                 let command = self.tray.as_ref().and_then(|t| t.command(&event.id));
                 if let Some(command) = command {
@@ -343,7 +446,7 @@ impl ApplicationHandler<UserEvent> for App {
         if let Some(window) = &mut self.settings_window
             && window.id() == id
         {
-            if let Some(action) = window.window_event(event, &self.settings) {
+            if let Some(action) = window.window_event(event, &self.settings, &self.update_status) {
                 self.apply(action);
             }
             return;
