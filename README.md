@@ -42,8 +42,8 @@ No accounts, no cloud, a few megabytes on disk.
 - Record an area as a GIF, or as an MP4 when [ffmpeg](https://ffmpeg.org) is installed.
 - From the tray: copy the full screen in one click, take a screenshot after 3, 5 or 10
   seconds, select the last area again, and reopen your recent screenshots.
-- A settings window for the capture shortcut, screenshots folder, image format and start at
-  login, and an option to replace the system screenshot tool.
+- A settings window with three pages: general options, a shortcut for every action, and
+  switches to turn off the features you don't use.
 - In English, Russian and Ukrainian, and it updates itself from GitHub Releases.
 
 Planned: Flatpak and code-signed installers.
@@ -115,8 +115,12 @@ The tray menu also has:
 Pick **Settings…** in the tray menu. There you can:
 
 - switch the language: English, Russian or Ukrainian (it follows the system by default);
-- record a new capture shortcut by clicking the field and pressing the keys; Snapt tells you
-  when another app already uses them;
+- on **Shortcuts**, give every action its own keys: capture, color picker, full screen,
+  repeat last area, and copy text, scrolling screenshot, recording, pin, copy and save on the open
+  screenshot. Click a field and press the keys; Backspace clears it. Snapt tells you when
+  the keys are already taken;
+- on **Features**, turn off text recognition, scrolling screenshots, pinning, image search,
+  printing, video recording or the color picker; their buttons and shortcuts go away;
 - let Snapt replace the system screenshot tool: on Windows, PrtSc stops opening the Snipping
   Tool; on GNOME, the shortcut opens Snapt instead of GNOME Screenshot, on Wayland too; on
   macOS and other desktops, the window explains the one manual step;
