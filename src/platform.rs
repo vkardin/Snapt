@@ -26,6 +26,7 @@ pub fn screen_access() -> bool {
 }
 
 /// Whether this is a Wayland session, where shortcuts and screenshots go through the portal.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub fn is_wayland() -> bool {
     cfg!(target_os = "linux") && std::env::var_os("WAYLAND_DISPLAY").is_some()
 }
