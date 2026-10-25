@@ -28,7 +28,10 @@ No accounts, no cloud, a few megabytes on disk.
 ## Features
 
 - Select an area on any monitor, HiDPI aware, with handles to move and resize it.
-- Draw on it: pen, line, arrow, rectangle, marker and text, in ten colors.
+- Draw on it: pen, line, arrow, rectangle, marker and text, in any color, or one picked
+  from the screen with the eyedropper.
+- Copy the text in the selection, recognized by the system's own OCR (English, Russian,
+  Ukrainian and more).
 - Copy it, save it as PNG or JPEG, print it, or search Google Lens for similar images.
 - A settings window for the capture shortcut, screenshots folder, image format and start at
   login, and an option to replace the system screenshot tool.
@@ -65,6 +68,8 @@ The screen freezes, then:
 | Save to a file | `Ctrl+S` |
 | Print | `Ctrl+P` |
 | Search for similar images | `Ctrl+F` |
+| Copy the text in it | `Ctrl+Shift+C` |
+| Pick a color from the screen | `I`, then click; the HEX code is copied too |
 | Cancel | `Esc` or right-click |
 
 On macOS, use `Cmd` instead of `Ctrl`. While typing text, `Enter` starts a new line and
@@ -131,7 +136,10 @@ and publishes a GitHub Release.
 - **Linux:** the tray icon uses the StatusNotifierItem protocol. KDE supports it out of
   the box; on GNOME, install the AppIndicator extension. On Wayland, apps can't register
   global shortcuts, so bind `snapt --capture` to a key in your desktop's keyboard
-  settings; the screen is captured through the desktop portal.
+  settings; the screen is captured through the desktop portal. Text recognition uses
+  Tesseract: `sudo apt install tesseract-ocr tesseract-ocr-rus tesseract-ocr-ukr`.
+- **Windows:** text recognition works for the languages added in Settings → Time & language
+  that include it.
 
 ## Contributing
 

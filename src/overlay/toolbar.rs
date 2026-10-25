@@ -18,6 +18,7 @@ pub enum Button {
     Color,
     Undo,
     Close,
+    Recognize,
     Search,
     Print,
     Copy,
@@ -37,7 +38,13 @@ const TOOLS: [Button; 9] = [
     Button::Undo,
     Button::Close,
 ];
-const ACTIONS: [Button; 4] = [Button::Search, Button::Print, Button::Copy, Button::Save];
+const ACTIONS: [Button; 5] = [
+    Button::Recognize,
+    Button::Search,
+    Button::Print,
+    Button::Copy,
+    Button::Save,
+];
 
 pub const PALETTE: [u32; 10] = [
     0xFF3B30, 0xFF9500, 0xFFCC00, 0x34C759, 0x32ADE6, 0x007AFF, 0xAF52DE, 0xFF2D78, 0x000000,
@@ -61,6 +68,7 @@ impl Button {
             Button::Color => return t(T::Color).into(),
             Button::Undo => (T::Undo, format!("{MOD}+Z")),
             Button::Close => (T::Close, "Esc".into()),
+            Button::Recognize => (T::Recognize, format!("{MOD}+Shift+C")),
             Button::Search => (T::Search, format!("{MOD}+F")),
             Button::Print => (T::Print, format!("{MOD}+P")),
             Button::Copy => (T::Copy, format!("{MOD}+C")),
@@ -488,6 +496,23 @@ fn icon(pixmap: &mut Pixmap, button: Button, color: u32, transform: Transform) {
             p.line_to(12.0, 12.0);
             p.move_to(12.0, 4.0);
             p.line_to(4.0, 12.0);
+        }
+        Button::Recognize => {
+            // A "T" in the corners of a frame.
+            for (x, y, dx, dy) in [
+                (2.5, 2.5, 1.0, 1.0),
+                (13.5, 2.5, -1.0, 1.0),
+                (2.5, 13.5, 1.0, -1.0),
+                (13.5, 13.5, -1.0, -1.0),
+            ] {
+                p.move_to(x, y + 3.0 * dy);
+                p.line_to(x, y);
+                p.line_to(x + 3.0 * dx, y);
+            }
+            p.move_to(5.5, 5.5);
+            p.line_to(10.5, 5.5);
+            p.move_to(8.0, 5.5);
+            p.line_to(8.0, 10.8);
         }
         Button::Search => {
             p.push_circle(7.0, 7.0, 4.5);

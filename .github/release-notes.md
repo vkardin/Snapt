@@ -29,5 +29,6 @@ Snapt starts in the tray (menu bar on macOS). Press **PrtSc** (**Cmd+Shift+9** o
 screenshot, select an area, draw on it with the panel next to it, then press `Ctrl+C` to copy or
 `Ctrl+S` to save. The shortcut, folder, format and language are in **Settings…** in the tray menu.
 From 1.1.0 on, Snapt checks for new versions once a day and offers to update itself.
+Press `Ctrl+Shift+C` to copy the text in the selection; on Linux this needs `tesseract-ocr`.
 
 More about Snapt, with answers to common questions, on the [website](https://vkardin.github.io/snapt/).
