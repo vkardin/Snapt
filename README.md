@@ -37,6 +37,7 @@ No accounts, no cloud, a few megabytes on disk.
   Ukrainian and more).
 - Copy it, save it as PNG or JPEG, print it, or search Google Lens for similar images.
 - Pin it on top of all windows to keep it in sight while you work, as in Snipaste.
+- Scrolling screenshots (experimental): scroll a long page and Snapt glues it into one image.
 - From the tray: copy the full screen in one click, take a screenshot after 3, 5 or 10
   seconds, select the last area again, and reopen your recent screenshots.
 - A settings window for the capture shortcut, screenshots folder, image format and start at
@@ -77,6 +78,7 @@ The screen freezes, then:
 | Search for similar images | `Ctrl+F` |
 | Copy the text in it | `Ctrl+Shift+C` |
 | Pin it on top of all windows | `F3` |
+| Scrolling screenshot (experimental) | `Ctrl+Shift+S`, then scroll the page down |
 | Pick a color from the screen | `I`, then click; the HEX code is copied too |
 | Cancel | `Esc` or right-click |
 
@@ -86,6 +88,12 @@ On macOS, use `Cmd` instead of `Ctrl`. While typing text, `Enter` starts a new l
 A pinned screenshot stays on top of other windows. Drag it to move it, zoom it with the mouse
 wheel or `+` and `-` (`0` goes back to 100 %), copy it again with `Ctrl+C`, save it with
 `Ctrl+S`, and close it with `Esc`, a double click or the middle mouse button.
+
+For a scrolling screenshot, select the visible part of the page and press `Ctrl+Shift+S` or
+the scroll button, then scroll down at an even pace. A panel shows the height so far; press
+`Enter` or click it when done (`Esc` cancels). The result is copied and pinned so you can
+check it and save it with `Ctrl+S`. It is experimental: sticky headers and animations can
+confuse the gluing.
 
 The tray menu also has:
 
