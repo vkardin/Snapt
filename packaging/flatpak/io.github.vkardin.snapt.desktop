@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Snapt
+GenericName=Screenshot Tool
+Comment=Select an area of the screen, draw on it, then copy or save it
+Comment[ru]=Выделите часть экрана, порисуйте на ней и скопируйте или сохраните
+Comment[uk]=Виділіть частину екрана, малюйте на ній і скопіюйте або збережіть
+Exec=snapt
+Icon=io.github.vkardin.snapt
+Categories=Graphics;
+Keywords=screenshot;screen;capture;annotate;lightshot;
+Terminal=false
+StartupNotify=false

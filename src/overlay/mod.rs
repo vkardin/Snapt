@@ -7,6 +7,8 @@
 mod annotate;
 mod render;
 mod selection;
+#[cfg(test)]
+mod snapshots;
 mod toolbar;
 
 use std::{

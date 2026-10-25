@@ -47,6 +47,18 @@ jobs:
             libdbus-1-dev libpipewire-0.3-dev libwayland-dev libegl-dev libgbm-dev clang
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo test --locked
+      - name: Test against a fake desktop portal
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y python3-dbus python3-gi dbus
+          dbus-run-session -- sh -c 'python3 tests/portal-mock.py & sleep 2; cargo test --locked -- --ignored portal'
+      - name: Upload failed snapshots
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: snapshots-${{ runner.os }}
+          path: target/snapshots
+          if-no-files-found: ignore
       - run: cargo build --release --locked
       - uses: actions/upload-artifact@v7
         with:

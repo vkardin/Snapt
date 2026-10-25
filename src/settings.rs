@@ -349,6 +349,11 @@ mod autostart {
     use super::*;
 
     pub fn apply(on: bool, exe: &Path) -> Result<()> {
+        // A Flatpak can't write the host's autostart folder; the portal does it.
+        #[cfg(target_os = "linux")]
+        if std::env::var_os("FLATPAK_ID").is_some() {
+            return crate::portal::autostart(on);
+        }
         let dirs = directories::BaseDirs::new().context("could not find the config folder")?;
         let path = dirs.config_dir().join("autostart/snapt.desktop");
         if !on {

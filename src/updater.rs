@@ -73,6 +73,10 @@ pub fn download(proxy: EventLoopProxy<UserEvent>, update: Update) {
 }
 
 fn check() -> Result<Option<Update>> {
+    // A Flatpak is updated by Flatpak, and can't replace its own files anyway.
+    if std::env::var_os("FLATPAK_ID").is_some() {
+        return Ok(None);
+    }
     let json = curl_text(LATEST)?;
     let tag = json_string(&json, "tag_name").context("no tag in the latest release")?;
     let version = tag.trim_start_matches('v').to_string();

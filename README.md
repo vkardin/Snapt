@@ -129,8 +129,11 @@ and `file_name` sets how saved files are named, with `strftime` codes such as `%
 
 `snapt --capture` takes a screenshot right away, `snapt --pick` opens the color picker and
 `snapt --settings` opens the settings.
-If Snapt is already running, that copy does it, so the command can be bound to a key in the system settings, which is how to use
-Snapt on Wayland.
+If Snapt is already running, that copy does it, so the command can be bound to a key in the
+system settings, for example on Wayland desktops without a global shortcuts portal.
+
+`snapt --logs` opens the folder with the log of the last run (`snapt.log`) and a
+`crash-<time>.txt` report for each crash. Attach them to a bug report.
 
 ## Building from source
 
@@ -168,10 +171,13 @@ and publishes a GitHub Release.
 - **macOS:** the first capture asks for the Screen Recording permission in
   System Settings → Privacy & Security. Restart Snapt after allowing it.
 - **Linux:** the tray icon uses the StatusNotifierItem protocol. KDE supports it out of
-  the box; on GNOME, install the AppIndicator extension. On Wayland, apps can't register
-  global shortcuts, so bind `snapt --capture` to a key in your desktop's keyboard
-  settings; the screen is captured through the desktop portal. Text recognition uses
-  Tesseract: `sudo apt install tesseract-ocr tesseract-ocr-rus tesseract-ocr-ukr`.
+  the box; on GNOME, install the AppIndicator extension. Text recognition uses Tesseract:
+  `sudo apt install tesseract-ocr tesseract-ocr-rus tesseract-ocr-ukr`.
+- **Wayland:** Snapt takes screenshots and gets its shortcut through the desktop portal
+  (xdg-desktop-portal). The first time, the desktop may ask you to allow screenshots and
+  to confirm the shortcut; you can change the key later in the desktop's keyboard
+  settings. Global shortcuts need a portal that has them, such as KDE Plasma 6 or
+  GNOME 48 and later. Elsewhere, bind `snapt --capture` to a key in the keyboard settings.
 - **Windows:** text recognition works for the languages added in Settings → Time & language
   that include it.
 
