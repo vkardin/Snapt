@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Snapt: fast, open-source screenshot tool</title>
-<meta name="description" content="Snapt is a fast, lightweight, open-source screenshot tool for Windows, macOS and Linux. Press PrtSc, select an area, copy or save it. No accounts, no cloud.">
+<meta name="description" content="Snapt is a fast, lightweight, open-source screenshot tool for Windows, macOS and Linux. Press PrtSc, select an area, draw an arrow or a caption, then copy or save it. No accounts, no cloud.">
 <meta name="theme-color" content="#5B21B6">
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <link rel="canonical" href="https://vkardin.github.io/snapt/">
@@ -143,7 +143,7 @@ h2 { font-size: clamp(28px, 3.6vw, 38px); letter-spacing: -.8px; line-height: 1.
 @media (prefers-color-scheme: dark) { .tag { color: #fbbf24; } }
 
 /* Steps and keys */
-.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; counter-reset: s; margin-bottom: 44px; }
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 18px; counter-reset: s; margin-bottom: 44px; }
 .step { position: relative; padding: 22px 22px 22px 70px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
 .step::before { counter-increment: s; content: counter(s); position: absolute; left: 20px; top: 20px; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--brand-strong); color: #fff; font-weight: 700; }
 .step h3 { margin: 0 0 4px; font-size: 17px; }
@@ -197,7 +197,7 @@ footer a { color: var(--muted); }
   <div class="wrap">
     <div>
       <h1>Screenshots in <span>one keystroke</span>.</h1>
-      <p class="lead">Snapt is a fast, lightweight, open-source screenshot tool for Windows, macOS and Linux. Press PrtSc, select an area, copy or save it. No accounts, no cloud, a few megabytes on disk.</p>
+      <p class="lead">Snapt is a fast, lightweight, open-source screenshot tool for Windows, macOS and Linux. Press PrtSc, select an area, draw an arrow or a caption, then copy or save it. No accounts, no cloud, a few megabytes on disk.</p>
       <div class="cta">
         <a class="btn btn-primary" id="hero-dl" href="#download">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
@@ -256,13 +256,13 @@ footer a { color: var(--muted); }
       </div>
       <div class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></div>
-        <h3>Copy or save</h3>
-        <p>Send the area straight to the clipboard, or save it as PNG or JPEG wherever you like.</p>
+        <h3>Copy, save, print, search</h3>
+        <p>Send the area to the clipboard, save it as PNG or JPEG, print it, or search the web for similar images.</p>
       </div>
       <div class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19 19 5M12 5h7v7"/></svg></div>
-        <h3>Annotate <span class="tag">Soon</span></h3>
-        <p>Arrows, lines, boxes, marker and text right on the selection, with colors and undo.</p>
+        <h3>Annotate</h3>
+        <p>Pen, lines, arrows, boxes, marker and text right on the selection, in any color, with undo and redo.</p>
       </div>
     </div>
   </div>
@@ -271,10 +271,11 @@ footer a { color: var(--muted); }
 <section id="how" class="soft">
   <div class="wrap">
     <h2>How it works</h2>
-    <p class="sub">Three steps, no windows to click through.</p>
+    <p class="sub">No windows to click through.</p>
     <div class="steps">
       <div class="step"><h3>Press PrtSc</h3><p>Or pick <b>Take screenshot</b> in the tray menu. The screen freezes.</p></div>
       <div class="step"><h3>Select an area</h3><p>Drag with the mouse. Adjust it by the edges, or press <kbd>Ctrl</kbd>+<kbd>A</kbd> for the whole screen.</p></div>
+      <div class="step"><h3>Draw on it</h3><p>Pick a tool on the toolbar or press its letter, like <kbd>A</kbd> for an arrow or <kbd>T</kbd> for text.</p></div>
       <div class="step"><h3>Copy or save</h3><p>Press <kbd>Ctrl</kbd>+<kbd>C</kbd> and paste anywhere, or <kbd>Ctrl</kbd>+<kbd>S</kbd> to save a file.</p></div>
     </div>
     <table>
@@ -285,6 +286,10 @@ footer a { color: var(--muted); }
         <tr><td>Select the whole screen</td><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td></tr>
         <tr><td>Copy to clipboard</td><td><kbd>Ctrl</kbd>+<kbd>C</kbd>, <kbd>Enter</kbd> or double-click</td></tr>
         <tr><td>Save to a file</td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td></tr>
+        <tr><td>Print</td><td><kbd>Ctrl</kbd>+<kbd>P</kbd></td></tr>
+        <tr><td>Search for similar images</td><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td></tr>
+        <tr><td>Pen, line, arrow, rectangle, marker, text</td><td><kbd>P</kbd> <kbd>L</kbd> <kbd>A</kbd> <kbd>R</kbd> <kbd>M</kbd> <kbd>T</kbd></td></tr>
+        <tr><td>Undo and redo</td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>+<kbd>Y</kbd></td></tr>
         <tr><td>Cancel</td><td><kbd>Esc</kbd> or right-click</td></tr>
       </tbody>
     </table>
