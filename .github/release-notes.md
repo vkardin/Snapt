@@ -22,7 +22,9 @@ Snapt is not code-signed yet, so the system warns you the first time you open it
   allow Screen Recording in the same settings page and restart Snapt.
 - **Linux.** Install the `.deb` with `sudo apt install ./snapt_*_amd64.deb`, or make the AppImage
   executable with `chmod +x snapt_*.AppImage` and run it. On GNOME, install the AppIndicator
-  extension to see the tray icon. The PrtSc hotkey works on X11 only for now.
+  extension to see the tray icon. On Wayland, bind `snapt --capture` to a key in the keyboard
+  settings, since apps can't register global shortcuts there.
 
-Snapt starts in the tray (menu bar on macOS). Press **PrtSc** to take a screenshot: it is copied to
-the clipboard and saved to `Pictures/Snapt`.
+Snapt starts in the tray (menu bar on macOS). Press **PrtSc** (**Cmd+Shift+9** on macOS) to take a
+screenshot, select an area, draw on it with the panel next to it, then press `Ctrl+C` to copy or
+`Ctrl+S` to save. The shortcut, folder and format are in the tray menu under **Settings**.

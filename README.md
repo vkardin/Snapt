@@ -18,10 +18,6 @@ No accounts, no cloud, a few megabytes on disk.
 
 </div>
 
-> [!NOTE]
-> Snapt is in early development. Today you can select an area and copy or save it.
-> Drawing tools are next.
-
 ## Why Snapt
 
 - **Fast.** A native Rust binary that starts instantly and sits idle in the tray.
@@ -29,17 +25,15 @@ No accounts, no cloud, a few megabytes on disk.
 - **Private.** Shots stay on your machine. Snapt never uploads anything.
 - **Familiar.** If you have used LightShot, you already know how Snapt works.
 
-## Roadmap
+## Features
 
-- [x] Tray icon with a menu
-- [x] Global PrtSc hotkey
-- [x] Region selection on every monitor, HiDPI aware
-- [x] Copy to clipboard, save as PNG or JPEG
-- [ ] Editor: pen, line, arrow, rectangle, marker, text, colors, undo
-- [ ] Print and reverse image search
-- [ ] Settings: hotkeys, save folder, image format, start with the system
-- [x] Installers: `.exe`, `.msi`, `.dmg`, `.deb` and AppImage
-- [ ] Flatpak and code signing
+- Select an area on any monitor, HiDPI aware, with handles to move and resize it.
+- Draw on it: pen, line, arrow, rectangle, marker and text, in ten colors.
+- Copy it, save it as PNG or JPEG, print it, or search Google Lens for similar images.
+- Pick the capture shortcut, screenshots folder and image format, save without a dialog,
+  start at login. All from the tray menu.
+
+Planned: Flatpak and code-signed installers.
 
 ## Install
 
@@ -54,18 +48,39 @@ first launch attempt and click **Open Anyway**.
 
 ## Usage
 
-Press **PrtSc** or pick **Take screenshot** in the tray menu. The screen freezes, then:
+Press **PrtSc** (**Cmd+Shift+9** on macOS) or pick **Take screenshot** in the tray menu.
+The screen freezes, then:
 
 | Action | How |
 | --- | --- |
 | Select an area | Drag with the left mouse button |
 | Move or resize it | Drag inside the selection or by its handles |
 | Select the whole screen | `Ctrl+A` |
+| Pick a drawing tool | Click it in the panel, or press `P` pen, `L` line, `A` arrow, `R` rectangle, `M` marker, `T` text |
+| Straight lines, squares | Hold `Shift` while drawing |
+| Line width, text size | Mouse wheel |
+| Undo, redo | `Ctrl+Z`, `Ctrl+Y` or `Ctrl+Shift+Z` |
 | Copy to clipboard | `Ctrl+C`, `Enter` or double-click the selection |
 | Save to a file | `Ctrl+S` |
+| Print | `Ctrl+P` |
+| Search for similar images | `Ctrl+F` |
 | Cancel | `Esc` or right-click |
 
-On macOS, use `Cmd` instead of `Ctrl`.
+On macOS, use `Cmd` instead of `Ctrl`. While typing text, `Enter` starts a new line and
+`Esc` finishes the text.
+
+### Settings
+
+The tray menu has a **Settings** submenu: the capture shortcut, the image format, the
+screenshots folder, **Save without asking** (`Ctrl+S` saves straight into the folder) and
+**Start at login**. **Open settings file** shows the plain-text file behind them, where any
+shortcut can be set, such as `hotkey = Ctrl+Alt+A`.
+
+### Command line
+
+`snapt --capture` takes a screenshot right away. If Snapt is already running, that copy
+takes it, so the command can be bound to a key in the system settings, which is how to use
+Snapt on Wayland.
 
 ## Building from source
 
@@ -101,10 +116,11 @@ and publishes a GitHub Release.
 ## Platform notes
 
 - **macOS:** the first capture asks for the Screen Recording permission in
-  System Settings → Privacy & Security.
+  System Settings → Privacy & Security. Restart Snapt after allowing it.
 - **Linux:** the tray icon uses the StatusNotifierItem protocol. KDE supports it out of
-  the box; on GNOME, install the AppIndicator extension. The global hotkey currently
-  works on X11 only. Wayland support is planned through the desktop portal.
+  the box; on GNOME, install the AppIndicator extension. On Wayland, apps can't register
+  global shortcuts, so bind `snapt --capture` to a key in your desktop's keyboard
+  settings; the screen is captured through the desktop portal.
 
 ## Contributing
 
@@ -114,3 +130,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to build, test and send a pull re
 ## License
 
 [MIT](LICENSE) © vkardin
+
+Snapt bundles a subset of the [Inter](https://github.com/rsms/inter) typeface,
+licensed under the [SIL Open Font License](assets/fonts/OFL.txt).

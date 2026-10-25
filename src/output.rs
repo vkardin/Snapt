@@ -7,12 +7,12 @@ use std::{
 use anyhow::{Context, Result};
 use arboard::{Clipboard, ImageData};
 use chrono::{DateTime, Local};
-use directories::UserDirs;
 use image::{DynamicImage, RgbaImage};
 
-/// Where finished screenshots go: the clipboard or an image file.
+use crate::settings::{Format, Settings};
+
+/// Where finished screenshots go: the clipboard, an image file, the printer or a search.
 pub struct Output {
-    dir: PathBuf,
     // On Linux the clipboard only serves its contents while its owner is alive,
     // so one instance is kept for the lifetime of the app.
     clipboard: Option<Clipboard>,
@@ -23,14 +23,7 @@ impl Output {
         let clipboard = Clipboard::new()
             .inspect_err(|err| log::warn!("clipboard unavailable: {err}"))
             .ok();
-        Ok(Self {
-            dir: default_dir()?,
-            clipboard,
-        })
-    }
-
-    pub fn dir(&self) -> &Path {
-        &self.dir
+        Ok(Self { clipboard })
     }
 
     pub fn copy(&mut self, shot: &RgbaImage) -> Result<()> {
@@ -45,23 +38,41 @@ impl Output {
             .context("failed to copy the screenshot")
     }
 
-    /// Asks where to save the shot. Returns `None` when the user cancels.
-    pub fn save_as(&mut self, shot: &RgbaImage) -> Result<Option<PathBuf>> {
+    /// Saves the shot into the screenshots folder, or asks where unless quick save is on.
+    /// Returns `None` when the user cancels. The folder picked becomes the new default.
+    pub fn save(&mut self, shot: &RgbaImage, settings: &mut Settings) -> Result<Option<PathBuf>> {
+        let name = file_name(Local::now(), settings.format);
+        if settings.quick_save {
+            fs::create_dir_all(&settings.folder)
+                .with_context(|| format!("failed to create {}", settings.folder.display()))?;
+            let path = unique_path(&settings.folder, &name);
+            save(shot, &path)?;
+            return Ok(Some(path));
+        }
+
         // Best effort: the dialog still works if the default folder can't be created.
-        let _ = fs::create_dir_all(&self.dir);
-        let picked = rfd::FileDialog::new()
+        let _ = fs::create_dir_all(&settings.folder);
+        let png = ("PNG image", &["png"][..]);
+        let jpeg = ("JPEG image", &["jpg", "jpeg"][..]);
+        let filters = match settings.format {
+            Format::Png => [png, jpeg],
+            Format::Jpeg => [jpeg, png],
+        };
+        let mut dialog = rfd::FileDialog::new()
             .set_title("Save screenshot")
-            .set_directory(&self.dir)
-            .set_file_name(file_name(Local::now()))
-            .add_filter("PNG image", &["png"])
-            .add_filter("JPEG image", &["jpg", "jpeg"])
-            .save_file();
-        let Some(path) = picked else { return Ok(None) };
+            .set_directory(&settings.folder)
+            .set_file_name(name);
+        for (label, extensions) in filters {
+            dialog = dialog.add_filter(label, extensions);
+        }
+        let Some(path) = dialog.save_file() else {
+            return Ok(None);
+        };
 
         save(shot, &path)?;
         if let Some(parent) = path.parent() {
             // Next time, the dialog opens where the user saved last.
-            self.dir = parent.to_path_buf();
+            settings.folder = parent.to_path_buf();
         }
         Ok(Some(path))
     }
@@ -156,15 +167,21 @@ fn save(shot: &RgbaImage, path: &Path) -> Result<()> {
     result.with_context(|| format!("failed to save {}", path.display()))
 }
 
-/// `~/Pictures/Snapt`, falling back to the home folder when there is no Pictures folder.
-fn default_dir() -> Result<PathBuf> {
-    let dirs = UserDirs::new().context("could not find the home folder")?;
-    let base = dirs.picture_dir().unwrap_or(dirs.home_dir());
-    Ok(base.join("Snapt"))
+/// `dir/name`, numbered when a shot taken in the same second already has it.
+fn unique_path(dir: &Path, name: &str) -> PathBuf {
+    let (stem, ext) = name.rsplit_once('.').unwrap_or((name, ""));
+    let mut path = dir.join(name);
+    let mut n = 2;
+    while path.exists() {
+        path = dir.join(format!("{stem}_{n}.{ext}"));
+        n += 1;
+    }
+    path
 }
 
-fn file_name(time: DateTime<Local>) -> String {
-    time.format("Snapt_%Y-%m-%d_%H-%M-%S.png").to_string()
+fn file_name(time: DateTime<Local>, format: Format) -> String {
+    let stem = time.format("Snapt_%Y-%m-%d_%H-%M-%S");
+    format!("{stem}.{}", format.extension())
 }
 
 #[cfg(test)]
@@ -189,7 +206,14 @@ mod tests {
     #[test]
     fn file_name_is_sortable_and_filesystem_safe() {
         let time = Local.with_ymd_and_hms(2026, 3, 7, 9, 5, 2).unwrap();
-        assert_eq!(file_name(time), "Snapt_2026-03-07_09-05-02.png");
+        assert_eq!(
+            file_name(time, Format::Png),
+            "Snapt_2026-03-07_09-05-02.png"
+        );
+        assert_eq!(
+            file_name(time, Format::Jpeg),
+            "Snapt_2026-03-07_09-05-02.jpg"
+        );
     }
 
     #[test]
