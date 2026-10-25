@@ -1,0 +1,25 @@
+# Maintainer: vkardin <63503018+vkardin@users.noreply.github.com>
+pkgname=snapt-bin
+pkgver=1.4.0
+pkgrel=1
+pkgdesc="Fast, lightweight, open-source screenshot tool (prebuilt)"
+arch=('x86_64')
+url="https://github.com/vkardin/snapt"
+license=('MIT')
+depends=('dbus' 'gcc-libs' 'glibc' 'libglvnd' 'libpipewire' 'libxcb' 'libxkbcommon-x11' 'mesa' 'wayland')
+optdepends=('tesseract: text recognition'
+            'tesseract-data-eng: English text recognition'
+            'tesseract-data-rus: Russian text recognition'
+            'tesseract-data-ukr: Ukrainian text recognition'
+            'xdg-desktop-portal: screenshots and the shortcut on Wayland')
+provides=('snapt')
+conflicts=('snapt')
+source=("https://github.com/vkardin/snapt/releases/download/v${pkgver}/snapt_${pkgver}_amd64.deb"
+        "LICENSE-${pkgver}::https://raw.githubusercontent.com/vkardin/snapt/v${pkgver}/LICENSE")
+sha256sums=('b04a4bd831da6e22e0c39d0df3b45cdabfa9a54a4e0a566e57a587bb1619bb4e'
+            '3f3314be021ff5b67237b928b4e444c58345e5463a698301a13a6aa044eac75c')
+
+package() {
+  bsdtar -xf data.tar.gz -C "$pkgdir"
+  install -Dm644 "LICENSE-${pkgver}" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

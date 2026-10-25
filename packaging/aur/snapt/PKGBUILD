@@ -1,0 +1,55 @@
+# Maintainer: vkardin <63503018+vkardin@users.noreply.github.com>
+pkgname=snapt
+pkgver=1.4.0
+pkgrel=1
+pkgdesc="Fast, lightweight, open-source screenshot tool"
+arch=('x86_64' 'aarch64')
+url="https://github.com/vkardin/snapt"
+license=('MIT')
+depends=('dbus' 'gcc-libs' 'glibc' 'libglvnd' 'libpipewire' 'libxcb' 'libxkbcommon-x11' 'mesa' 'wayland')
+makedepends=('cargo' 'clang')
+optdepends=('tesseract: text recognition'
+            'tesseract-data-eng: English text recognition'
+            'tesseract-data-rus: Russian text recognition'
+            'tesseract-data-ukr: Ukrainian text recognition'
+            'xdg-desktop-portal: screenshots and the shortcut on Wayland')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/vkardin/snapt/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('21e6a3c46a15a4cae8d2f045e45108521a088e7849721bafc7508977f79ae2fc')
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo test --frozen
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 target/release/snapt "$pkgdir/usr/bin/snapt"
+  install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/snapt.desktop" <<END
+[Desktop Entry]
+Type=Application
+Name=Snapt
+Comment=$pkgdesc
+Exec=snapt
+Icon=snapt
+Categories=Graphics;
+Terminal=false
+END
+  for size in 32 128 256 512; do
+    install -Dm644 "assets/icons/${size}x${size}.png" "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/snapt.png"
+  done
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

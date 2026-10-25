@@ -1,0 +1,51 @@
+# Flatpak manifest, to be submitted to Flathub (see packaging/README.md).
+# cargo-sources.json is generated from Cargo.lock for an offline build:
+#   python3 flatpak-cargo-generator.py ../../Cargo.lock -o cargo-sources.json
+id: io.github.vkardin.snapt
+runtime: org.freedesktop.Platform
+runtime-version: "25.08"
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.llvm20
+command: snapt
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  # Update checks, image search, and the localhost port that keeps one copy running.
+  - --share=network
+  # The tray icon.
+  - --talk-name=org.kde.StatusNotifierWatcher
+  # The default screenshots folder is ~/Pictures/Snapt.
+  - --filesystem=xdg-pictures
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm20/bin
+  prepend-ld-library-path: /usr/lib/sdk/llvm20/lib
+  env:
+    CARGO_HOME: /run/build/snapt/cargo
+    CARGO_NET_OFFLINE: "true"
+modules:
+  - name: snapt
+    buildsystem: simple
+    build-commands:
+      - cargo --offline build --release --locked
+      - install -Dm755 target/release/snapt /app/bin/snapt
+      - install -Dm644 io.github.vkardin.snapt.desktop -t /app/share/applications
+      - install -Dm644 io.github.vkardin.snapt.metainfo.xml -t /app/share/metainfo
+      - |
+        for size in 32 128 256 512; do
+          install -Dm644 assets/icons/${size}x${size}.png \
+            /app/share/icons/hicolor/${size}x${size}/apps/io.github.vkardin.snapt.png
+        done
+    sources:
+      - type: git
+        url: https://github.com/vkardin/snapt.git
+        tag: v1.4.0
+        commit: 5b8fd714c5b1904a448a1c30c9a853c5470dbd69
+      - cargo-sources.json
+      # Kept next to the manifest, so any tagged release builds.
+      - type: file
+        path: io.github.vkardin.snapt.desktop
+      - type: file
+        path: io.github.vkardin.snapt.metainfo.xml

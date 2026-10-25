@@ -23,6 +23,19 @@ cargo test
 
 CI runs the same checks on Windows, macOS and Linux.
 
+### Snapshot tests
+
+Some tests draw the overlay, a saved image and the settings window and compare them with
+the PNGs in [`tests/snapshots`](tests/snapshots). If you change how something looks on
+purpose, regenerate them, look at the new pictures and commit them:
+
+```sh
+SNAPT_UPDATE_SNAPSHOTS=1 cargo test
+```
+
+A failing test saves what it drew and a diff (changed pixels in red) to
+`target/snapshots`; in CI they are uploaded as the `snapshots-<OS>` artifact.
+
 ## Website
 
 The website at [vkardin.github.io/snapt](https://vkardin.github.io/snapt/) is a static page
@@ -30,6 +43,11 @@ in [`site/`](site), in English (`index.html`), Russian (`ru/`) and Ukrainian (`u
 `style.css` and `app.js`; when you change the text, change all three. Preview it with
 `python3 -m http.server -d site` and open http://localhost:8000. Changes to `site/`
 are published to GitHub Pages when they land on `main`.
+
+## Packages
+
+Manifests for winget, Homebrew, the AUR and Flathub are in [`packaging/`](packaging), with how
+to update and publish them after a release.
 
 ## Guidelines
 
