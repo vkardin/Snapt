@@ -1,0 +1,25 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Snapt version
+      placeholder: "0.1.0"
+  - type: dropdown
+    attributes:
+      label: Operating system
+      options: [Windows, macOS, Linux (X11), Linux (Wayland)]
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Logs
+      description: Run Snapt with `RUST_LOG=debug` and paste the output.
+      render: text
