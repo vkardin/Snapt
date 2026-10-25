@@ -7,6 +7,10 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release, like v0.1.0. Leave empty to only build."
+        required: false
   pull_request:
     paths:
       - .github/workflows/release.yml
@@ -80,7 +84,7 @@ jobs:
 
   release:
     name: Publish release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
     needs: package
     runs-on: ubuntu-latest
     permissions:
@@ -96,7 +100,7 @@ jobs:
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           # 0.x versions and tags like v1.0.0-beta.1 are marked as pre-releases.
           flags=()
@@ -106,5 +110,5 @@ jobs:
             gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
           else
             gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" \
-              --title "Snapt ${TAG#v}" --notes-file .github/release-notes.md --generate-notes "${flags[@]}"
+              --target "$GITHUB_SHA" --title "Snapt ${TAG#v}" --notes-file .github/release-notes.md --generate-notes "${flags[@]}"
           fi
