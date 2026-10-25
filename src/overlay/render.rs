@@ -4,7 +4,6 @@ use image::RgbaImage;
 use tiny_skia::{Pixmap, Rect as SkRect};
 
 use super::selection::{Handle, Rect};
-use super::toolbar;
 use crate::font;
 
 pub const ACCENT: u32 = 0x8B5CF6;
@@ -146,7 +145,7 @@ fn draw_label(buf: &mut [u32], width: i32, rect: Rect, label: &str, scale: f64) 
         return;
     };
     let bg = SkRect::from_xywh(0.0, 0.0, w as f32, h as f32);
-    toolbar::fill_round(&mut pixmap, bg, 5.0 * s, 0x111113, 0.85);
+    crate::paint::fill_round(&mut pixmap, bg, 5.0 * s, 0x111113, 0.85);
     font::draw(&mut pixmap, label, pad_x, pad_y, size, WHITE, 1.0);
     blend_pixmap(buf, width, &pixmap, x, y);
 }

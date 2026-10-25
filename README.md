@@ -30,8 +30,9 @@ No accounts, no cloud, a few megabytes on disk.
 - Select an area on any monitor, HiDPI aware, with handles to move and resize it.
 - Draw on it: pen, line, arrow, rectangle, marker and text, in ten colors.
 - Copy it, save it as PNG or JPEG, print it, or search Google Lens for similar images.
-- Pick the capture shortcut, screenshots folder and image format, save without a dialog,
-  start at login. All from the tray menu.
+- A settings window for the capture shortcut, screenshots folder, image format and start at
+  login, and an option to replace the system screenshot tool.
+- In English, Russian and Ukrainian.
 
 Planned: Flatpak and code-signed installers.
 
@@ -71,15 +72,22 @@ On macOS, use `Cmd` instead of `Ctrl`. While typing text, `Enter` starts a new l
 
 ### Settings
 
-The tray menu has a **Settings** submenu: the capture shortcut, the image format, the
-screenshots folder, **Save without asking** (`Ctrl+S` saves straight into the folder) and
-**Start at login**. **Open settings file** shows the plain-text file behind them, where any
-shortcut can be set, such as `hotkey = Ctrl+Alt+A`.
+Pick **Settings…** in the tray menu. There you can:
+
+- switch the language: English, Russian or Ukrainian (it follows the system by default);
+- record a new capture shortcut by clicking the field and pressing the keys; Snapt tells you
+  when another app already uses them;
+- let Snapt replace the system screenshot tool: on Windows, PrtSc stops opening the Snipping
+  Tool; on GNOME, the shortcut opens Snapt instead of GNOME Screenshot, on Wayland too; on
+  macOS and other desktops, the window explains the one manual step;
+- choose the screenshots folder and format, save without a dialog, and start at login.
+
+The settings are stored in a plain-text `settings.ini` in the config folder.
 
 ### Command line
 
-`snapt --capture` takes a screenshot right away. If Snapt is already running, that copy
-takes it, so the command can be bound to a key in the system settings, which is how to use
+`snapt --capture` takes a screenshot right away and `snapt --settings` opens the settings.
+If Snapt is already running, that copy does it, so the command can be bound to a key in the system settings, which is how to use
 Snapt on Wayland.
 
 ## Building from source
