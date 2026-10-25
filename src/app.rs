@@ -18,7 +18,7 @@ use crate::{
     overlay::{Area, Outcome, Overlay, Style},
     pin::{Pin, PinAction},
     platform,
-    scroll::{Scroll, ScrollAction},
+    scroll::{Finished, Scroll, ScrollAction},
     settings::{self, Settings, Shortcut},
     settings_window::{Action, Notice, SettingsWindow, UpdateStatus},
     tray::{Command, Tray},
@@ -289,12 +289,14 @@ impl App {
                 self.remember(&image);
                 self.pin(event_loop, image, position, size);
             }
-            Outcome::Scroll { region, panel } => {
-                match Scroll::start(event_loop, self.proxy.clone(), region, panel) {
-                    Ok(scroll) => self.scroll = Some(scroll),
-                    Err(err) => log::error!("{err:#}"),
-                }
-            }
+            Outcome::Scroll {
+                region,
+                panel,
+                mode,
+            } => match Scroll::start(event_loop, self.proxy.clone(), region, panel, mode) {
+                Ok(scroll) => self.scroll = Some(scroll),
+                Err(err) => log::error!("{err:#}"),
+            },
         }
         if changed {
             self.save_settings();
@@ -403,10 +405,20 @@ impl App {
         }
     }
 
-    /// Copies the finished scrolling screenshot and pins it to look it over.
+    /// Copies the finished scrolling screenshot and pins it to look it over,
+    /// or asks where to save the finished recording.
     fn finish_scroll(&mut self, event_loop: &ActiveEventLoop) {
-        let Some(image) = self.scroll.take().and_then(Scroll::finish) else {
-            return;
+        let image = match self.scroll.take().and_then(Scroll::finish) {
+            Some(Finished::Image(image)) => image,
+            Some(Finished::Video(video)) => {
+                match self.output.save_video(&video, &self.settings) {
+                    Ok(Some(path)) => log::info!("saved {}", path.display()),
+                    Ok(None) => {}
+                    Err(err) => log::error!("{err:#}"),
+                }
+                return;
+            }
+            None => return,
         };
         if let Err(err) = self.copy(&image) {
             log::error!("{err:#}");

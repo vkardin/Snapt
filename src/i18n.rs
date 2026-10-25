@@ -148,6 +148,12 @@ pub enum T {
     Scroll,
     ScrollHint,
     ScrollHeight,
+    Record,
+    RecordHint,
+    RecordTime,
+    RecordTitle,
+    GifVideo,
+    Mp4Video,
 }
 
 /// The current language's text for `key`.
@@ -445,6 +451,24 @@ pub fn tr(lang: Lang, key: T) -> &'static str {
         (ScrollHeight, En) => "{} px so far · Esc cancels",
         (ScrollHeight, Ru) => "Уже {} px · Esc отменяет",
         (ScrollHeight, Uk) => "Уже {} px · Esc скасовує",
+        (Record, En) => "Record video",
+        (Record, Ru) => "Записать видео",
+        (Record, Uk) => "Записати відео",
+        (RecordHint, En) => "Recording. Enter or click: stop",
+        (RecordHint, Ru) => "Идёт запись. Enter или клик: стоп",
+        (RecordHint, Uk) => "Іде запис. Enter або клік: стоп",
+        (RecordTime, En) => "{} · Esc cancels",
+        (RecordTime, Ru) => "{} · Esc отменяет",
+        (RecordTime, Uk) => "{} · Esc скасовує",
+        (RecordTitle, En) => "Save recording",
+        (RecordTitle, Ru) => "Сохранить запись",
+        (RecordTitle, Uk) => "Зберегти запис",
+        (GifVideo, En) => "GIF animation",
+        (GifVideo, Ru) => "GIF-анимация",
+        (GifVideo, Uk) => "GIF-анімація",
+        (Mp4Video, En) => "MP4 video",
+        (Mp4Video, Ru) => "Видео MP4",
+        (Mp4Video, Uk) => "Відео MP4",
     }
 }
 
