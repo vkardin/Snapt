@@ -1,8 +1,6 @@
 <div align="center">
 
-<img src="assets/logo.svg" width="96" alt="Snapt logo">
-
-# Snapt
+<img src="assets/banner.svg" alt="Snapt: select, annotate, copy" width="100%">
 
 **A fast, lightweight, open-source screenshot tool for Windows, macOS and Linux.**
 
@@ -67,11 +65,7 @@ Set `RUST_LOG=debug` to see detailed logs.
 ## Contributing
 
 Bug reports and ideas are welcome in [Issues](https://github.com/vkardin/snapt/issues).
-Before opening a pull request, please run:
-
-```sh
-cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to build, test and send a pull request.
 
 ## License
 
