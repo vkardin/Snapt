@@ -32,7 +32,7 @@ No accounts, no cloud, a few megabytes on disk.
 - Copy it, save it as PNG or JPEG, print it, or search Google Lens for similar images.
 - A settings window for the capture shortcut, screenshots folder, image format and start at
   login, and an option to replace the system screenshot tool.
-- In English, Russian and Ukrainian.
+- In English, Russian and Ukrainian, and it updates itself from GitHub Releases.
 
 Planned: Flatpak and code-signed installers.
 
@@ -80,7 +80,10 @@ Pick **Settings…** in the tray menu. There you can:
 - let Snapt replace the system screenshot tool: on Windows, PrtSc stops opening the Snipping
   Tool; on GNOME, the shortcut opens Snapt instead of GNOME Screenshot, on Wayland too; on
   macOS and other desktops, the window explains the one manual step;
-- choose the screenshots folder and format, save without a dialog, and start at login.
+- choose the screenshots folder and format, save without a dialog, and start at login;
+- keep Snapt up to date: it checks GitHub Releases once a day and offers **Update** in the
+  tray and in the window. The Windows installer, the macOS app and the AppImage update
+  themselves; for the `.deb`, the download page opens.
 
 The settings are stored in a plain-text `settings.ini` in the config folder.
 
