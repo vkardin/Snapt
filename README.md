@@ -27,8 +27,8 @@ No accounts, no cloud, a few megabytes on disk.
 
 ## Features
 
-- Select an area on any monitor, HiDPI aware, with handles to move and resize it and a
-  magnifier for pixel-exact edges.
+- Select an area on any monitor, or a whole window with one click, HiDPI aware, with
+  handles to move and resize it and a magnifier for pixel-exact edges.
 - Draw on it: pen, line, arrow, rectangle, ellipse, marker, text and numbered steps, in
   any color, or one picked from the screen with the eyedropper. Pixelate what should stay
   private. Click a shape to move it, or delete it with `Delete`.
@@ -65,6 +65,7 @@ The screen freezes, then:
 | Action | How |
 | --- | --- |
 | Select an area | Drag with the left mouse button |
+| Select a window | Point at it and click |
 | Move or resize it | Drag inside the selection or by its handles |
 | Select the whole screen | `Ctrl+A` |
 | Pick a drawing tool | Click it in the panel, or press `P` pen, `L` line, `A` arrow, `R` rectangle, `E` ellipse, `M` marker, `T` text, `N` numbered step, `B` pixelate |
