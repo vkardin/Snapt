@@ -8,7 +8,7 @@ use crate::{
     history::Entry,
     i18n::{T, t},
     icon,
-    settings::Settings,
+    settings::{Feature, Settings, Shortcut},
 };
 
 /// The delays offered for a delayed screenshot, in seconds.
@@ -49,7 +49,7 @@ impl Tray {
     /// `update` is the version to offer at the top of the menu, if one is out.
     pub fn new(settings: &Settings, update: Option<&str>) -> Result<Self> {
         let capture = MenuItem::new(t(T::TakeScreenshot), true, None);
-        let pick = MenuItem::new(t(T::PickColor), true, None);
+        let pick = MenuItem::new(t(T::PickColor), settings.is_enabled(Feature::Picker), None);
         let full_screen = MenuItem::new(t(T::FullScreen), true, None);
         let repeat = MenuItem::new(t(T::RepeatArea), false, None);
         let delayed = Submenu::new(t(T::Delayed), true);
@@ -181,12 +181,12 @@ impl Tray {
         self.capture.set_text(format!(
             "{}\t{}",
             t(T::TakeScreenshot),
-            hotkey_label(&settings.hotkey)
+            hotkey_label(settings.shortcut(Shortcut::Capture))
         ));
         self.pick.set_text(format!(
             "{}\t{}",
             t(T::PickColor),
-            hotkey_label(&settings.pick_hotkey)
+            hotkey_label(settings.shortcut(Shortcut::Pick))
         ));
     }
 }

@@ -43,6 +43,22 @@ const TOOLS: [Button; 12] = [
     Button::Undo,
     Button::Close,
 ];
+/// The action buttons, without the features turned off in the settings.
+fn actions() -> Vec<Button> {
+    use crate::settings::{Feature, enabled};
+    ACTIONS
+        .into_iter()
+        .filter(|b| match b {
+            Button::Recognize => enabled(Feature::Recognize),
+            Button::Search => enabled(Feature::Search),
+            Button::Print => enabled(Feature::Print),
+            Button::Pin => enabled(Feature::Pin),
+            Button::Scroll => enabled(Feature::Scroll),
+            _ => true,
+        })
+        .collect()
+}
+
 const ACTIONS: [Button; 7] = [
     Button::Recognize,
     Button::Search,
@@ -145,7 +161,8 @@ impl Toolbar {
         };
 
         // Actions: a row below the selection, right-aligned with it.
-        let actions_w = ACTIONS.len() as i32 * button + 2 * pad;
+        let action_buttons = actions();
+        let actions_w = action_buttons.len() as i32 * button + 2 * pad;
         let actions_h = button + 2 * pad;
         let actions_y = if sel.bottom() + gap + actions_h <= height {
             sel.bottom() + gap
@@ -177,7 +194,7 @@ impl Toolbar {
             };
             buttons.push((b, r));
         }
-        for (i, &b) in ACTIONS.iter().enumerate() {
+        for (i, &b) in action_buttons.iter().enumerate() {
             let r = Rect {
                 x: actions.x + pad + i as i32 * button,
                 y: actions.y + pad,

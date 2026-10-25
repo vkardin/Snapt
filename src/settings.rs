@@ -48,31 +48,151 @@ impl ColorFormat {
     }
 }
 
-/// The two global shortcuts.
+/// Parts of Snapt that can be turned off in the settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Feature {
+    Recognize,
+    Search,
+    Print,
+    Pin,
+    Scroll,
+    Picker,
+}
+
+impl Feature {
+    pub const ALL: [Feature; 6] = [
+        Feature::Recognize,
+        Feature::Search,
+        Feature::Print,
+        Feature::Pin,
+        Feature::Scroll,
+        Feature::Picker,
+    ];
+
+    fn code(self) -> &'static str {
+        match self {
+            Feature::Recognize => "ocr",
+            Feature::Search => "search",
+            Feature::Print => "print",
+            Feature::Pin => "pin",
+            Feature::Scroll => "scroll",
+            Feature::Picker => "picker",
+        }
+    }
+
+    fn bit(self) -> u32 {
+        1 << self as u32
+    }
+}
+
+/// The features turned off, for code that has no `Settings` at hand.
+static DISABLED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Whether `feature` is on, as the settings last applied say.
+pub fn enabled(feature: Feature) -> bool {
+    DISABLED.load(std::sync::atomic::Ordering::Relaxed) & feature.bit() == 0
+}
+
+/// The keyboard shortcuts: global ones that work anywhere, then ones for the
+/// open screenshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shortcut {
     Capture,
     /// The color picker.
     Pick,
+    FullScreen,
+    RepeatArea,
+    Recognize,
+    Scroll,
+    Pin,
+    Copy,
+    Save,
+}
+
+#[cfg(target_os = "macos")]
+macro_rules! cmd {
+    ($keys:literal) => {
+        concat!("Cmd+", $keys)
+    };
+}
+#[cfg(not(target_os = "macos"))]
+macro_rules! cmd {
+    ($keys:literal) => {
+        concat!("Ctrl+", $keys)
+    };
 }
 
 impl Shortcut {
-    pub const ALL: [Shortcut; 2] = [Shortcut::Capture, Shortcut::Pick];
+    pub const ALL: [Shortcut; 9] = [
+        Shortcut::Capture,
+        Shortcut::Pick,
+        Shortcut::FullScreen,
+        Shortcut::RepeatArea,
+        Shortcut::Recognize,
+        Shortcut::Scroll,
+        Shortcut::Pin,
+        Shortcut::Copy,
+        Shortcut::Save,
+    ];
 
+    /// Whether it works anywhere, not just on the open screenshot.
+    pub fn is_global(self) -> bool {
+        matches!(
+            self,
+            Shortcut::Capture | Shortcut::Pick | Shortcut::FullScreen | Shortcut::RepeatArea
+        )
+    }
+
+    /// The keys out of the box; empty for none.
     pub fn default_keys(self) -> &'static str {
         match self {
             Shortcut::Capture => DEFAULT_HOTKEY,
             Shortcut::Pick => DEFAULT_PICK_HOTKEY,
+            Shortcut::FullScreen | Shortcut::RepeatArea => "",
+            Shortcut::Recognize => cmd!("Shift+C"),
+            Shortcut::Scroll => cmd!("Shift+S"),
+            Shortcut::Pin => "F3",
+            Shortcut::Copy => cmd!("C"),
+            Shortcut::Save => cmd!("S"),
+        }
+    }
+
+    /// Its name in the settings file.
+    fn code(self) -> &'static str {
+        match self {
+            Shortcut::Capture => "hotkey",
+            Shortcut::Pick => "pick_hotkey",
+            Shortcut::FullScreen => "full_screen_hotkey",
+            Shortcut::RepeatArea => "repeat_area_hotkey",
+            Shortcut::Recognize => "copy_text_key",
+            Shortcut::Scroll => "scroll_key",
+            Shortcut::Pin => "pin_key",
+            Shortcut::Copy => "copy_key",
+            Shortcut::Save => "save_key",
         }
     }
 }
 
+/// The screenshot's own shortcuts, parsed, for the overlay.
+static OVERLAY_KEYS: std::sync::Mutex<Vec<(Shortcut, global_hotkey::hotkey::HotKey)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// The screenshot shortcut that `code` with `modifiers` held presses, if any.
+pub fn overlay_shortcut(
+    modifiers: global_hotkey::hotkey::Modifiers,
+    code: global_hotkey::hotkey::Code,
+) -> Option<Shortcut> {
+    let keys = OVERLAY_KEYS.lock().ok()?;
+    keys.iter()
+        .find(|(_, hotkey)| hotkey.matches(modifiers, code))
+        .map(|(which, _)| *which)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
-    /// The capture shortcut, as `global_hotkey` parses it, e.g. `Ctrl+Shift+S`.
-    pub hotkey: String,
-    /// The color picker's shortcut.
-    pub pick_hotkey: String,
+    /// The keys of each `Shortcut`, as `global_hotkey` parses them, e.g.
+    /// `Ctrl+Shift+S`; empty for none.
+    pub shortcuts: [String; 9],
     pub color_format: ColorFormat,
     pub folder: PathBuf,
     pub format: Format,
@@ -92,6 +212,8 @@ pub struct Settings {
     pub history: usize,
     /// The name of saved files, in `strftime` syntax, without the extension.
     pub file_name: String,
+    /// Features turned off.
+    pub disabled: Vec<Feature>,
 }
 
 /// The file name template used when none is set: `Snapt_2026-03-07_09-05-02`.
@@ -107,8 +229,7 @@ pub const DEFAULT_PICK_HOTKEY: &str = "Ctrl+Alt+C";
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            hotkey: DEFAULT_HOTKEY.into(),
-            pick_hotkey: DEFAULT_PICK_HOTKEY.into(),
+            shortcuts: Shortcut::ALL.map(|s| s.default_keys().to_string()),
             color_format: ColorFormat::Hex,
             folder: default_folder(),
             format: Format::Png,
@@ -121,6 +242,7 @@ impl Default for Settings {
             stroke: 3.0,
             text_size: 20.0,
             history: crate::history::DEFAULT_LIMIT,
+            disabled: Vec::new(),
             file_name: DEFAULT_FILE_NAME.into(),
         }
     }
@@ -133,17 +255,11 @@ impl Settings {
     }
 
     pub fn shortcut(&self, which: Shortcut) -> &str {
-        match which {
-            Shortcut::Capture => &self.hotkey,
-            Shortcut::Pick => &self.pick_hotkey,
-        }
+        &self.shortcuts[which as usize]
     }
 
     pub fn shortcut_mut(&mut self, which: Shortcut) -> &mut String {
-        match which {
-            Shortcut::Capture => &mut self.hotkey,
-            Shortcut::Pick => &mut self.pick_hotkey,
-        }
+        &mut self.shortcuts[which as usize]
     }
 
     pub fn path() -> Option<PathBuf> {
@@ -171,6 +287,34 @@ impl Settings {
             .with_context(|| format!("failed to write {}", path.display()))
     }
 
+    pub fn is_enabled(&self, feature: Feature) -> bool {
+        !self.disabled.contains(&feature)
+    }
+
+    /// Turns `feature` on or off.
+    pub fn toggle(&mut self, feature: Feature) {
+        if let Some(i) = self.disabled.iter().position(|f| *f == feature) {
+            self.disabled.remove(i);
+        } else {
+            self.disabled.push(feature);
+        }
+        self.apply_features();
+    }
+
+    /// Makes `enabled` and `overlay_shortcut` follow these settings.
+    pub fn apply_features(&self) {
+        let bits = self.disabled.iter().fold(0, |b, f| b | f.bit());
+        DISABLED.store(bits, std::sync::atomic::Ordering::Relaxed);
+        let keys = Shortcut::ALL
+            .into_iter()
+            .filter(|w| !w.is_global())
+            .filter_map(|w| Some((w, self.shortcut(w).parse().ok()?)))
+            .collect();
+        if let Ok(mut overlay) = OVERLAY_KEYS.lock() {
+            *overlay = keys;
+        }
+    }
+
     fn parse(text: &str) -> Self {
         let mut s = Self::default();
         for line in text.lines() {
@@ -183,8 +327,12 @@ impl Settings {
             };
             let value = value.trim();
             match key.trim() {
-                "hotkey" if !value.is_empty() => s.hotkey = value.into(),
-                "pick_hotkey" if !value.is_empty() => s.pick_hotkey = value.into(),
+                key if let Some(which) = Shortcut::ALL.into_iter().find(|w| w.code() == key) => {
+                    // The capture shortcut can't be empty: nothing else starts a capture.
+                    if !value.is_empty() || which != Shortcut::Capture {
+                        s.shortcuts[which as usize] = value.into();
+                    }
+                }
                 "color_format" => {
                     s.color_format = match value.to_ascii_lowercase().as_str() {
                         "rgb" => ColorFormat::Rgb,
@@ -212,6 +360,12 @@ impl Settings {
                 "text_size" => s.text_size = value.parse().unwrap_or(s.text_size).clamp(10.0, 96.0),
                 "history" => s.history = value.parse().unwrap_or(s.history).min(50),
                 "file_name" if !value.is_empty() => s.file_name = value.into(),
+                "disabled" => {
+                    s.disabled = Feature::ALL
+                        .into_iter()
+                        .filter(|f| value.split(',').any(|v| v.trim() == f.code()))
+                        .collect()
+                }
                 _ => {}
             }
         }
@@ -224,8 +378,9 @@ impl Settings {
             t,
             "# hotkey examples: PrintScreen, Ctrl+Shift+S, Cmd+Shift+9"
         );
-        let _ = writeln!(t, "hotkey = {}", self.hotkey);
-        let _ = writeln!(t, "pick_hotkey = {}", self.pick_hotkey);
+        for which in Shortcut::ALL {
+            let _ = writeln!(t, "{} = {}", which.code(), self.shortcut(which));
+        }
         let format = match self.color_format {
             ColorFormat::Hex => "hex",
             ColorFormat::Rgb => "rgb",
@@ -249,6 +404,9 @@ impl Settings {
             "# saved file names: %Y year, %m month, %d day, %H hour, %M minute, %S second"
         );
         let _ = writeln!(t, "file_name = {}", self.file_name);
+        let disabled: Vec<&str> = self.disabled.iter().map(|f| f.code()).collect();
+        let _ = writeln!(t, "# turned off: ocr, search, print, pin, scroll, picker");
+        let _ = writeln!(t, "disabled = {}", disabled.join(", "));
         t
     }
 }
@@ -378,8 +536,11 @@ mod tests {
     #[test]
     fn settings_survive_a_round_trip() {
         let s = Settings {
-            hotkey: "Ctrl+Shift+S".into(),
-            pick_hotkey: "Alt+P".into(),
+            shortcuts: Shortcut::ALL.map(|w| match w {
+                Shortcut::Capture => "Ctrl+Shift+S".into(),
+                Shortcut::Pin => String::new(),
+                _ => format!("Alt+F{}", w as usize + 1),
+            }),
             color_format: ColorFormat::Rgb,
             folder: PathBuf::from("/tmp/shots"),
             format: Format::Jpeg,
@@ -393,6 +554,7 @@ mod tests {
             text_size: 28.0,
             history: 0,
             file_name: "shot %d.%m.%Y".into(),
+            disabled: vec![Feature::Pin, Feature::Picker],
         };
         assert_eq!(Settings::parse(&s.to_text()), s);
     }
@@ -406,12 +568,8 @@ mod tests {
     #[test]
     fn the_default_hotkeys_parse() {
         for which in Shortcut::ALL {
-            assert!(
-                which
-                    .default_keys()
-                    .parse::<global_hotkey::hotkey::HotKey>()
-                    .is_ok()
-            );
+            let keys = which.default_keys();
+            assert!(keys.is_empty() || keys.parse::<global_hotkey::hotkey::HotKey>().is_ok());
         }
     }
 
