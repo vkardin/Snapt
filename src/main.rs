@@ -10,8 +10,11 @@ mod app;
 mod capture;
 mod font;
 mod icon;
+mod instance;
 mod output;
 mod overlay;
+mod platform;
+mod settings;
 mod tray;
 
 use anyhow::Result;
@@ -19,8 +22,30 @@ use winit::event_loop::EventLoop;
 
 use app::{App, UserEvent};
 
+const HELP: &str = "Snapt: a fast, lightweight screenshot tool.
+
+Usage: snapt [--capture]
+
+  --capture   Take a screenshot right away. If Snapt is already running,
+              that copy takes it. Bind this to a key where global
+              shortcuts don't work, such as on Wayland.
+  --version   Print the version.";
+
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("snapt {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{HELP}");
+        return Ok(());
+    }
+    // A second copy hands over to the running one, which takes the screenshot.
+    if instance::forward() {
+        return Ok(());
+    }
     log::info!("Snapt {} starting", env!("CARGO_PKG_VERSION"));
 
     let mut builder = EventLoop::<UserEvent>::with_user_event();
@@ -42,7 +67,9 @@ fn main() -> Result<()> {
         let _ = proxy.send_event(UserEvent::Hotkey(event));
     }));
 
-    let mut app = App::new(std::env::args().any(|a| a == "--capture"))?;
+    instance::listen(event_loop.create_proxy());
+
+    let mut app = App::new(args.iter().any(|a| a == "--capture"))?;
     event_loop.run_app(&mut app)?;
     Ok(())
 }
