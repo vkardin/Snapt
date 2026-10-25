@@ -7,7 +7,7 @@
 Press PrtSc, select an area, add an arrow or a caption, then copy it or save it.<br>
 No accounts, no cloud, a few megabytes on disk.
 
-**[Website](https://vkardin.github.io/snapt/) · [Download](https://vkardin.github.io/snapt/#download) · [Report a bug](https://github.com/vkardin/snapt/issues)**
+**[Website](https://vkardin.github.io/snapt/) ([RU](https://vkardin.github.io/snapt/ru/), [UA](https://vkardin.github.io/snapt/uk/)) · [Download](https://vkardin.github.io/snapt/#download) · [Report a bug](https://github.com/vkardin/snapt/issues)**
 
 [![CI](https://github.com/vkardin/snapt/actions/workflows/ci.yml/badge.svg)](https://github.com/vkardin/snapt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-8B5CF6.svg)](LICENSE)
