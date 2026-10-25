@@ -51,6 +51,39 @@ impl Output {
 
     /// Saves the shot into the screenshots folder, or asks where unless quick save is on.
     /// Returns `None` when the user cancels. The folder picked becomes the new default.
+    /// Asks where to save a recording, as MP4 (when there is one) or GIF.
+    /// With quick save on, it goes straight into the screenshots folder.
+    pub fn save_video(
+        &self,
+        video: &crate::record::Video,
+        settings: &Settings,
+    ) -> Result<Option<PathBuf>> {
+        let ext = if video.mp4.is_some() { "mp4" } else { "gif" };
+        let name = file_name(Local::now(), &settings.file_name, settings.format);
+        let name = format!(
+            "{}.{ext}",
+            name.rsplit_once('.').map_or(&*name, |(stem, _)| stem)
+        );
+        let _ = fs::create_dir_all(&settings.folder);
+        let path = if settings.quick_save {
+            unique_path(&settings.folder, &name)
+        } else {
+            let mut dialog = rfd::FileDialog::new()
+                .set_title(t(T::RecordTitle))
+                .set_directory(&settings.folder)
+                .set_file_name(name);
+            if video.mp4.is_some() {
+                dialog = dialog.add_filter(t(T::Mp4Video), &["mp4"]);
+            }
+            dialog = dialog.add_filter(t(T::GifVideo), &["gif"]);
+            let Some(path) = dialog.save_file() else {
+                return Ok(None);
+            };
+            path
+        };
+        video.keep(&path).map(Some)
+    }
+
     pub fn save(&mut self, shot: &RgbaImage, settings: &mut Settings) -> Result<Option<PathBuf>> {
         let name = file_name(Local::now(), &settings.file_name, settings.format);
         if settings.quick_save {
