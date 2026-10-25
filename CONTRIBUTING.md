@@ -23,6 +23,12 @@ cargo test
 
 CI runs the same checks on Windows, macOS and Linux.
 
+## Website
+
+The website at [vkardin.github.io/snapt](https://vkardin.github.io/snapt/) is a single static
+page in [`site/`](site). Open `site/index.html` in a browser to preview it. Changes to `site/`
+are published to GitHub Pages when they land on `main`.
+
 ## Guidelines
 
 - Keep Snapt small and fast: think twice before adding a dependency.
