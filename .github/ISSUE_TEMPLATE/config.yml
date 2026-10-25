@@ -1,1 +1,5 @@
 blank_issues_enabled: false
+contact_links:
+  - name: Questions and answers
+    url: https://vkardin.github.io/snapt/#faq
+    about: Check the FAQ on the website before opening an issue.
