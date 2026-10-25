@@ -556,7 +556,7 @@ impl Screen {
     fn label(&self, rect: Rect, style: &Style) -> String {
         let (_, _, w, h) = self.to_image(rect).unwrap_or_default();
         match style.tool {
-            Some(Tool::Text) => format!("{w} × {h}  ·  {} px text", style.text_size),
+            Some(Tool::Text) => format!("{w} × {h}  ·  {} px", style.text_size),
             Some(_) => format!("{w} × {h}  ·  {} px", style.stroke),
             None => format!("{w} × {h}"),
         }
@@ -749,7 +749,7 @@ fn draw_live(buf: &mut [u32], width: i32, rect: Rect, shape: &Shape, typing: boo
             (1.5 * scale as f32).max(1.0),
             line,
         );
-        toolbar::fill_round(&mut pixmap, caret, 0.0, shape.color, 1.0);
+        crate::paint::fill_round(&mut pixmap, caret, 0.0, shape.color, 1.0);
     }
     render::blend_pixmap(buf, width, &pixmap, left, top);
 }

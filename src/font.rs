@@ -15,6 +15,12 @@ fn font() -> &'static FontRef<'static> {
     FONT.get_or_init(|| FontRef::try_from_slice(DATA).expect("the bundled font is valid"))
 }
 
+/// Whether the bundled font can draw `c`.
+#[cfg(test)]
+pub fn has_glyph(c: char) -> bool {
+    c.is_whitespace() || font().glyph_id(c).0 != 0
+}
+
 /// The height of one line of text at `size` pixels.
 pub fn line_height(size: f32) -> f32 {
     let f = font().as_scaled(PxScale::from(size));

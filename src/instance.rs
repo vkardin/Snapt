@@ -3,7 +3,7 @@
 //! The first copy listens on a localhost port and records it in the config
 //! folder. Starting Snapt again, e.g. `snapt --capture` from a desktop shortcut
 //! on Wayland where global hotkeys are not available, asks that copy to take a
-//! screenshot and exits.
+//! screenshot (or, with `--settings`, to show its settings) and exits.
 
 use std::{
     io::{BufRead, BufReader, Write},
@@ -16,15 +16,17 @@ use winit::event_loop::EventLoopProxy;
 
 use crate::{app::UserEvent, settings::Settings};
 
-const REQUEST: &[u8] = b"snapt capture\n";
+const CAPTURE: &str = "snapt capture";
+const SETTINGS: &str = "snapt settings";
 const REPLY: &str = "snapt ok";
 
 fn port_file() -> Option<PathBuf> {
     Some(Settings::path()?.with_file_name("instance.port"))
 }
 
-/// Asks a running copy to take a screenshot. Returns false when none answers.
-pub fn forward() -> bool {
+/// Asks a running copy to take a screenshot, or to show its settings.
+/// Returns false when none answers.
+pub fn forward(settings: bool) -> bool {
     let Some(port) = port_file()
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|s| s.trim().parse::<u16>().ok())
@@ -36,7 +38,8 @@ pub fn forward() -> bool {
         return false;
     };
     let _ = stream.set_read_timeout(Some(Duration::from_millis(1000)));
-    if stream.write_all(REQUEST).is_err() {
+    let request = if settings { SETTINGS } else { CAPTURE };
+    if stream.write_all(format!("{request}\n").as_bytes()).is_err() {
         return false;
     }
     // Another program may have taken the port since; only Snapt answers like this.
@@ -68,11 +71,17 @@ pub fn listen(proxy: EventLoopProxy<UserEvent>) {
             let _ = stream.set_read_timeout(Some(Duration::from_millis(1000)));
             let mut line = String::new();
             let mut reader = BufReader::new(&stream);
-            if reader.read_line(&mut line).is_ok() && line.as_bytes() == REQUEST {
-                let _ = (&stream).write_all(format!("{REPLY}\n").as_bytes());
-                if proxy.send_event(UserEvent::Capture).is_err() {
-                    break;
-                }
+            if reader.read_line(&mut line).is_err() {
+                continue;
+            }
+            let event = match line.trim() {
+                CAPTURE => UserEvent::Capture,
+                SETTINGS => UserEvent::Settings,
+                _ => continue,
+            };
+            let _ = (&stream).write_all(format!("{REPLY}\n").as_bytes());
+            if proxy.send_event(event).is_err() {
+                break;
             }
         }
     });
