@@ -1,0 +1,105 @@
+name: Release
+
+# Push a tag like `v0.1.0` to build the installers and publish a GitHub Release.
+# Run it by hand from the Actions tab, or open a pull request that changes packaging,
+# to only build the installers.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/release-notes.md
+      - assets/icons/**
+      - Cargo.toml
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_PACKAGER_VERSION: 0.11.8
+
+jobs:
+  package:
+    name: Package (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            formats: deb,appimage
+          - name: Windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            formats: nsis,wix
+          - name: macOS Apple Silicon
+            os: macos-latest
+            target: aarch64-apple-darwin
+            formats: dmg
+          - name: macOS Intel
+            os: macos-latest
+            target: x86_64-apple-darwin
+            formats: dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev \
+            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libegl-dev libgbm-dev clang \
+            libfuse2t64
+      - name: Install cargo-packager
+        run: cargo install cargo-packager --locked --version ${{ env.CARGO_PACKAGER_VERSION }}
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Package
+        run: cargo packager --release --target ${{ matrix.target }} --formats ${{ matrix.formats }}
+      - name: Collect installers
+        shell: bash
+        run: |
+          mkdir -p dist
+          find target/packages -maxdepth 1 -type f \
+            \( -name '*.deb' -o -name '*.AppImage' -o -name '*.exe' -o -name '*.msi' -o -name '*.dmg' \) \
+            -exec cp {} dist/ \;
+          ls -l dist
+          test -n "$(ls dist)"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installers-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Write checksums
+        run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # 0.x versions and tags like v1.0.0-beta.1 are marked as pre-releases.
+          flags=()
+          if [[ "$TAG" == v0.* || "$TAG" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" \
+            --title "Snapt ${TAG#v}" --notes-file .github/release-notes.md --generate-notes "${flags[@]}"
