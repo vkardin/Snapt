@@ -175,6 +175,11 @@ impl Selection {
         !matches!(self.drag, Drag::Idle)
     }
 
+    /// Whether the selection is being drawn or resized, not just moved.
+    pub fn is_sizing(&self) -> bool {
+        matches!(self.drag, Drag::Creating { .. } | Drag::Resizing { .. })
+    }
+
     pub fn clear(&mut self) {
         self.rect = None;
         self.drag = Drag::Idle;

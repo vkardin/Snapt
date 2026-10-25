@@ -28,13 +28,16 @@ pub enum Button {
     Eyedropper,
 }
 
-const TOOLS: [Button; 9] = [
+const TOOLS: [Button; 12] = [
     Button::Tool(Tool::Pen),
     Button::Tool(Tool::Line),
     Button::Tool(Tool::Arrow),
     Button::Tool(Tool::Rect),
+    Button::Tool(Tool::Ellipse),
     Button::Tool(Tool::Marker),
     Button::Tool(Tool::Text),
+    Button::Tool(Tool::Number),
+    Button::Tool(Tool::Pixelate),
     Button::Color,
     Button::Undo,
     Button::Close,
@@ -65,6 +68,9 @@ impl Button {
             Button::Tool(Tool::Line) => (T::Line, "L".into()),
             Button::Tool(Tool::Arrow) => (T::Arrow, "A".into()),
             Button::Tool(Tool::Rect) => (T::Rectangle, "R".into()),
+            Button::Tool(Tool::Ellipse) => (T::Ellipse, "E".into()),
+            Button::Tool(Tool::Number) => (T::Number, "N".into()),
+            Button::Tool(Tool::Pixelate) => (T::Pixelate, "B".into()),
             Button::Tool(Tool::Marker) => (T::Marker, "M".into()),
             Button::Tool(Tool::Text) => (T::Text, "T".into()),
             Button::Color => return t(T::Color).into(),
@@ -450,6 +456,24 @@ fn icon(pixmap: &mut Pixmap, button: Button, color: u32, transform: Transform) {
             p.line_to(13.0, 9.5);
         }
         Button::Tool(Tool::Rect) => p.push_rect(SkRect::from_xywh(2.5, 3.5, 11.0, 9.0).unwrap()),
+        Button::Tool(Tool::Ellipse) => p.push_oval(SkRect::from_xywh(2.0, 3.5, 12.0, 9.0).unwrap()),
+        Button::Tool(Tool::Number) => {
+            // A "1" in a circle.
+            p.push_circle(8.0, 8.0, 6.0);
+            p.move_to(6.6, 6.2);
+            p.line_to(8.4, 4.9);
+            p.line_to(8.4, 11.2);
+        }
+        Button::Tool(Tool::Pixelate) => {
+            // A checkerboard of blocks.
+            p.push_rect(SkRect::from_xywh(2.5, 2.5, 11.0, 11.0).unwrap());
+            for (x, y) in [(2.5, 2.5), (8.0, 8.0)] {
+                if let Some(block) = SkRect::from_xywh(x, y, 5.5, 5.5) {
+                    let path = PathBuilder::from_rect(block);
+                    pixmap.fill_path(&path, &paint, FillRule::Winding, transform, None);
+                }
+            }
+        }
         Button::Tool(Tool::Marker) => {
             let mut wide = PathBuilder::new();
             wide.move_to(4.0, 11.0);

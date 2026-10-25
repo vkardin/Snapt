@@ -31,7 +31,7 @@ use winit::{
 use crate::capture::Shot;
 use crate::i18n::{T, t};
 use crate::settings::ColorFormat;
-use annotate::{Canvas, Kind, Shape};
+use annotate::{Backdrop, Canvas, Kind, Shape};
 use render::Frame;
 use selection::{Handle, Hit, Point, Rect, Selection};
 use toolbar::{Button, Look, Target, Toolbar};
@@ -123,6 +123,10 @@ struct Screen {
     drawing: bool,
     /// Finished shapes rendered for the current selection.
     layer: Option<Layer>,
+    /// The shape picked with no tool active, to move or delete.
+    selected: Option<usize>,
+    /// Where the mouse last was while dragging `selected`, and whether it has moved yet.
+    moving: Option<(Point, bool)>,
     hover: Option<Target>,
 }
 
@@ -271,7 +275,17 @@ impl Overlay {
         let style = self.style;
         let screen = &mut self.screens[index];
         screen.cursor = Point::new(position.x as i32, position.y as i32);
-        if screen.drawing {
+        if let (Some((last, moved)), Some(mut i)) = (screen.moving, screen.selected) {
+            if !moved {
+                // One undo step for the whole drag, taken only if it really moves.
+                i = screen.canvas.begin_move(i);
+                screen.selected = Some(i);
+            }
+            let (dx, dy) = (screen.cursor.x - last.x, screen.cursor.y - last.y);
+            screen.canvas.translate(i, dx as f32, dy as f32);
+            screen.moving = Some((screen.cursor, true));
+            screen.window.request_redraw();
+        } else if screen.drawing {
             if let Some(shape) = &mut screen.live {
                 shape.drag_to(screen.cursor.into(), straight);
                 screen.window.request_redraw();
@@ -292,6 +306,10 @@ impl Overlay {
             screen.window.set_cursor(CursorIcon::Crosshair);
             screen.window.request_redraw();
         }
+        if screen.selection.rect().is_none() {
+            // So does the magnifier before a selection.
+            screen.window.request_redraw();
+        }
     }
 
     fn mouse_input(
@@ -306,7 +324,8 @@ impl Overlay {
                 let style = self.style;
                 let straight = self.modifiers.shift_key();
                 let screen = &mut self.screens[index];
-                if screen.drawing {
+                if screen.moving.take().is_some() {
+                } else if screen.drawing {
                     screen.drawing = false;
                     if let Some(mut shape) = screen.live.take() {
                         shape.drag_to(screen.cursor.into(), straight);
@@ -356,6 +375,7 @@ impl Overlay {
             if i != index && other.selection.rect().is_some() {
                 other.selection.clear();
                 other.canvas.clear();
+                other.selected = None;
                 other.live = None;
                 other.window.request_redraw();
             }
@@ -366,6 +386,7 @@ impl Overlay {
         screen.window.request_redraw();
         let hit = screen.selection.hit(screen.cursor, screen.grip());
         screen.commit_text();
+        screen.selected = None;
         match (hit, style.tool) {
             (Hit::Handle(_), _) => screen.selection.press(screen.cursor, screen.grip()),
             (Hit::Inside, Some(tool)) => {
@@ -382,8 +403,16 @@ impl Overlay {
                         at.y - crate::font::line_height(size) / 2.0,
                     );
                 }
-                screen.live = Some(Shape::start(tool, at, style.color, size));
+                let mut shape = Shape::start(tool, at, style.color, size);
+                if let Kind::Number(_, n) = &mut shape.kind {
+                    *n = screen.canvas.next_number();
+                }
+                screen.live = Some(shape);
                 screen.drawing = tool != Tool::Text;
+            }
+            (Hit::Inside, None) if screen.canvas.hit(screen.cursor.into()).is_some() => {
+                screen.selected = screen.canvas.hit(screen.cursor.into());
+                screen.moving = Some((screen.cursor, false));
             }
             (Hit::Inside, None) => {
                 if screen.is_double_click() {
@@ -501,6 +530,9 @@ impl Overlay {
             KeyCode::KeyL => Some(Tool::Line),
             KeyCode::KeyA => Some(Tool::Arrow),
             KeyCode::KeyR => Some(Tool::Rect),
+            KeyCode::KeyE => Some(Tool::Ellipse),
+            KeyCode::KeyN => Some(Tool::Number),
+            KeyCode::KeyB => Some(Tool::Pixelate),
             KeyCode::KeyM => Some(Tool::Marker),
             KeyCode::KeyT => Some(Tool::Text),
             _ => None,
@@ -552,6 +584,13 @@ impl Overlay {
             }
             KeyCode::KeyZ if command => {
                 screen.undo();
+                None
+            }
+            KeyCode::Delete | KeyCode::Backspace if screen.selected.is_some() => {
+                if let Some(i) = screen.selected.take() {
+                    screen.canvas.remove(i);
+                }
+                screen.window.request_redraw();
                 None
             }
             _ if !command && has_selection && tool.is_some() => {
@@ -617,6 +656,8 @@ impl Screen {
             live: None,
             drawing: false,
             layer: None,
+            selected: None,
+            moving: None,
             hover: None,
         };
         screen.resize(size);
@@ -668,10 +709,19 @@ impl Screen {
         let label = rect.map(|r| self.label(r, style)).unwrap_or_default();
         let scale = self.window.scale_factor();
         let toolbar = self.toolbar(palette);
-        let magnifier = picker.map(|format| {
-            let color = self.pixel_at(self.cursor);
-            (self.pixels_around(self.cursor, 11), format.format(color))
-        });
+        let magnifier = picker
+            .map(|format| format.format(self.pixel_at(self.cursor)))
+            .or_else(|| {
+                // Pixel-exact edges: before and while sizing the selection, show its corner.
+                let aiming = rect.is_none() || self.selection.is_sizing();
+                (aiming && !pick_only).then(|| {
+                    let (iw, ih) = self.image.dimensions();
+                    let x = self.cursor.x as i64 * iw as i64 / self.frame.width.max(1) as i64;
+                    let y = self.cursor.y as i64 * ih as i64 / self.frame.height.max(1) as i64;
+                    format!("{x}, {y}")
+                })
+            })
+            .map(|text| (self.pixels_around(self.cursor, 11), text));
         if let Some(rect) = rect {
             self.update_layer(rect);
         }
@@ -702,6 +752,12 @@ impl Screen {
         if let Some(rect) = rect {
             if let Some(layer) = &self.layer {
                 render::blend_pixmap(&mut buffer, width, &layer.pixmap, rect.x, rect.y);
+            }
+            if let Some(bounds) = self
+                .selected
+                .and_then(|i| self.canvas.shapes().get(i)?.bounds())
+            {
+                draw_dashed(&mut buffer, width, bounds, rect, scale);
             }
             if let Some(shape) = &self.live {
                 draw_live(&mut buffer, width, rect, shape, !self.drawing, scale);
@@ -755,8 +811,14 @@ impl Screen {
             return;
         };
         let transform = Transform::from_translate(-rect.x as f32, -rect.y as f32);
+        let backdrop = Backdrop {
+            image: &self.image,
+            x: rect.x,
+            y: rect.y,
+            scale: self.image.width() as f32 / self.frame.width.max(1) as f32,
+        };
         for shape in self.canvas.shapes() {
-            shape.draw(&mut pixmap, transform);
+            shape.draw(&mut pixmap, transform, Some(&backdrop));
         }
         self.layer = Some(Layer {
             rect,
@@ -851,6 +913,7 @@ impl Screen {
     }
 
     fn undo(&mut self) {
+        self.selected = None;
         if self.is_typing() {
             self.live = None;
         } else {
@@ -860,6 +923,7 @@ impl Screen {
     }
 
     fn redo(&mut self) {
+        self.selected = None;
         self.commit_text();
         self.canvas.redo();
         self.window.request_redraw();
@@ -1037,6 +1101,30 @@ fn draw_magnifier(
     render::blend_pixmap(buf, width, &pixmap, x, y);
 }
 
+/// Outlines the picked shape's `bounds` with a dashed line, clipped to the selection.
+fn draw_dashed(buf: &mut [u32], width: i32, bounds: tiny_skia::Rect, clip: Rect, scale: f64) {
+    let pad = (4.0 * scale).round() as i32;
+    let dash = (4.0 * scale).round().max(2.0) as i32;
+    let left = bounds.left().floor() as i32 - pad;
+    let top = bounds.top().floor() as i32 - pad;
+    let right = bounds.right().ceil() as i32 + pad;
+    let bottom = bounds.bottom().ceil() as i32 + pad;
+    let mut put = |x: i32, y: i32, i: i32| {
+        if x >= clip.x && x < clip.right() && y >= clip.y && y < clip.bottom() {
+            let on = (i / dash) % 2 == 0;
+            buf[(y * width + x) as usize] = if on { 0xFFFFFF } else { 0x000000 };
+        }
+    };
+    for x in left..=right {
+        put(x, top, x - left);
+        put(x, bottom, x - left);
+    }
+    for y in top..=bottom {
+        put(left, y, y - top);
+        put(right, y, y - top);
+    }
+}
+
 /// Draws the shape in progress, clipped to the selection. Text being typed gets a caret.
 fn draw_live(buf: &mut [u32], width: i32, rect: Rect, shape: &Shape, typing: bool, scale: f64) {
     let Some(bounds) = shape.bounds() else { return };
@@ -1051,7 +1139,7 @@ fn draw_live(buf: &mut [u32], width: i32, rect: Rect, shape: &Shape, typing: boo
         return;
     };
     let transform = Transform::from_translate(-left as f32, -top as f32);
-    shape.draw(&mut pixmap, transform);
+    shape.draw(&mut pixmap, transform, None);
     if typing && let Kind::Text(at, text) = &shape.kind {
         let line = crate::font::line_height(shape.size);
         let lines = text.split('\n').count() as f32;
