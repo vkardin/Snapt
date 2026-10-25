@@ -14,6 +14,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
     Capture,
+    PickColor,
     OpenFolder,
     Settings,
     Update,
@@ -25,6 +26,7 @@ pub struct Tray {
     // Dropping the icon removes it from the tray.
     _icon: TrayIcon,
     capture: MenuItem,
+    pick: MenuItem,
     commands: Vec<(MenuId, Command)>,
 }
 
@@ -32,6 +34,7 @@ impl Tray {
     /// `update` is the version to offer at the top of the menu, if one is out.
     pub fn new(settings: &Settings, update: Option<&str>) -> Result<Self> {
         let capture = MenuItem::new(t(T::TakeScreenshot), true, None);
+        let pick = MenuItem::new(t(T::PickColor), true, None);
         let open_folder = MenuItem::new(t(T::OpenFolder), true, None);
         let settings_item = MenuItem::new(t(T::SettingsMenu), true, None);
         let quit = MenuItem::new(t(T::Quit), true, None);
@@ -57,6 +60,7 @@ impl Tray {
         }
         menu.append_items(&[
             &capture,
+            &pick,
             &open_folder,
             &settings_item,
             &PredefinedMenuItem::separator(),
@@ -67,6 +71,7 @@ impl Tray {
 
         commands.extend([
             (capture.id().clone(), Command::Capture),
+            (pick.id().clone(), Command::PickColor),
             (open_folder.id().clone(), Command::OpenFolder),
             (settings_item.id().clone(), Command::Settings),
             (quit.id().clone(), Command::Quit),
@@ -88,6 +93,7 @@ impl Tray {
         let tray = Self {
             _icon: tray,
             capture,
+            pick,
             commands,
         };
         tray.sync(settings);
@@ -98,12 +104,17 @@ impl Tray {
         self.commands.iter().find(|(i, _)| i == id).map(|(_, c)| *c)
     }
 
-    /// Shows the current shortcut next to the capture item.
+    /// Shows the current shortcuts next to their items.
     pub fn sync(&self, settings: &Settings) {
         self.capture.set_text(format!(
             "{}\t{}",
             t(T::TakeScreenshot),
             hotkey_label(&settings.hotkey)
+        ));
+        self.pick.set_text(format!(
+            "{}\t{}",
+            t(T::PickColor),
+            hotkey_label(&settings.pick_hotkey)
         ));
     }
 }
