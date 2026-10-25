@@ -18,6 +18,7 @@ pub const DELAYS: [u64; 3] = [3, 5, 10];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
     Capture,
+    PickColor,
     /// Copy every screen at once, without the overlay.
     FullScreen,
     /// Open the overlay with the last selected area already selected.
@@ -38,6 +39,7 @@ pub struct Tray {
     // Dropping the icon removes it from the tray.
     _icon: TrayIcon,
     capture: MenuItem,
+    pick: MenuItem,
     repeat: MenuItem,
     history: Submenu,
     commands: Vec<(MenuId, Command)>,
@@ -47,6 +49,7 @@ impl Tray {
     /// `update` is the version to offer at the top of the menu, if one is out.
     pub fn new(settings: &Settings, update: Option<&str>) -> Result<Self> {
         let capture = MenuItem::new(t(T::TakeScreenshot), true, None);
+        let pick = MenuItem::new(t(T::PickColor), true, None);
         let full_screen = MenuItem::new(t(T::FullScreen), true, None);
         let repeat = MenuItem::new(t(T::RepeatArea), false, None);
         let delayed = Submenu::new(t(T::Delayed), true);
@@ -87,6 +90,7 @@ impl Tray {
         }
         menu.append_items(&[
             &capture,
+            &pick,
             &full_screen,
             &repeat,
             &delayed,
@@ -102,6 +106,7 @@ impl Tray {
 
         commands.extend([
             (capture.id().clone(), Command::Capture),
+            (pick.id().clone(), Command::PickColor),
             (full_screen.id().clone(), Command::FullScreen),
             (repeat.id().clone(), Command::RepeatArea),
             (open_folder.id().clone(), Command::OpenFolder),
@@ -125,6 +130,7 @@ impl Tray {
         let tray = Self {
             _icon: tray,
             capture,
+            pick,
             repeat,
             history,
             commands,
@@ -170,12 +176,17 @@ impl Tray {
         self.commands.iter().find(|(i, _)| i == id).map(|(_, c)| *c)
     }
 
-    /// Shows the current shortcut next to the capture item.
+    /// Shows the current shortcuts next to their items.
     pub fn sync(&self, settings: &Settings) {
         self.capture.set_text(format!(
             "{}\t{}",
             t(T::TakeScreenshot),
             hotkey_label(&settings.hotkey)
+        ));
+        self.pick.set_text(format!(
+            "{}\t{}",
+            t(T::PickColor),
+            hotkey_label(&settings.pick_hotkey)
         ));
     }
 }

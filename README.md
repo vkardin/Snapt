@@ -30,6 +30,8 @@ No accounts, no cloud, a few megabytes on disk.
 - Select an area on any monitor, HiDPI aware, with handles to move and resize it.
 - Draw on it: pen, line, arrow, rectangle, marker and text, in any color, or one picked
   from the screen with the eyedropper.
+- A color picker on its own shortcut (`Ctrl+Alt+C`) or in the tray: a magnifier shows the
+  pixels under the cursor and a click copies the color as HEX or RGB.
 - Copy the text in the selection, recognized by the system's own OCR (English, Russian,
   Ukrainian and more).
 - Copy it, save it as PNG or JPEG, print it, or search Google Lens for similar images.
@@ -113,7 +115,8 @@ and `file_name` sets how saved files are named, with `strftime` codes such as `%
 
 ### Command line
 
-`snapt --capture` takes a screenshot right away and `snapt --settings` opens the settings.
+`snapt --capture` takes a screenshot right away, `snapt --pick` opens the color picker and
+`snapt --settings` opens the settings.
 If Snapt is already running, that copy does it, so the command can be bound to a key in the system settings, which is how to use
 Snapt on Wayland.
 
