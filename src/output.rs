@@ -255,10 +255,7 @@ mod tests {
             file_name(time, "Скрин %d.%m.%Y", Format::Png),
             "Скрин 07.03.2026.png"
         );
-        assert_eq!(
-            file_name(time, "%H:%M/%S", Format::Png),
-            "09-05-02.png"
-        );
+        assert_eq!(file_name(time, "%H:%M/%S", Format::Png), "09-05-02.png");
         // An unknown specifier would make chrono fail, so the default is used.
         assert_eq!(
             file_name(time, "shot %Q", Format::Png),

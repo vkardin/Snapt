@@ -21,6 +21,7 @@ pub enum Button {
     Recognize,
     Search,
     Print,
+    Pin,
     Copy,
     Save,
     /// Picks the drawing color from the screen; sits in the palette.
@@ -38,10 +39,11 @@ const TOOLS: [Button; 9] = [
     Button::Undo,
     Button::Close,
 ];
-const ACTIONS: [Button; 5] = [
+const ACTIONS: [Button; 6] = [
     Button::Recognize,
     Button::Search,
     Button::Print,
+    Button::Pin,
     Button::Copy,
     Button::Save,
 ];
@@ -71,6 +73,7 @@ impl Button {
             Button::Recognize => (T::Recognize, format!("{MOD}+Shift+C")),
             Button::Search => (T::Search, format!("{MOD}+F")),
             Button::Print => (T::Print, format!("{MOD}+P")),
+            Button::Pin => (T::Pin, "F3".into()),
             Button::Copy => (T::Copy, format!("{MOD}+C")),
             Button::Save => (T::Save, format!("{MOD}+S")),
             Button::Eyedropper => (T::Eyedropper, "I".into()),
@@ -531,6 +534,19 @@ fn icon(pixmap: &mut Pixmap, button: Button, color: u32, transform: Transform) {
             p.line_to(13.5, 11.5);
             p.line_to(11.5, 11.5);
             p.push_rect(SkRect::from_xywh(4.5, 9.0, 7.0, 5.0).unwrap());
+        }
+        Button::Pin => {
+            // A push pin.
+            p.move_to(5.5, 2.5);
+            p.line_to(10.5, 2.5);
+            p.move_to(6.5, 2.5);
+            p.line_to(6.5, 6.5);
+            p.line_to(4.0, 9.5);
+            p.line_to(12.0, 9.5);
+            p.line_to(9.5, 6.5);
+            p.line_to(9.5, 2.5);
+            p.move_to(8.0, 9.5);
+            p.line_to(8.0, 14.0);
         }
         Button::Copy => {
             p.push_rect(SkRect::from_xywh(5.5, 5.5, 8.0, 8.5).unwrap());

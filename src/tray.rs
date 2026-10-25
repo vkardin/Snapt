@@ -75,7 +75,11 @@ impl Tray {
             commands.push((item.id().clone(), Command::Update));
         }
         for seconds in DELAYS {
-            let item = MenuItem::new(t(T::Seconds).replace("{}", &seconds.to_string()), true, None);
+            let item = MenuItem::new(
+                t(T::Seconds).replace("{}", &seconds.to_string()),
+                true,
+                None,
+            );
             delayed
                 .append(&item)
                 .context("failed to build the tray menu")?;
