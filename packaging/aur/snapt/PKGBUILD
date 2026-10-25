@@ -1,6 +1,6 @@
 # Maintainer: vkardin <63503018+vkardin@users.noreply.github.com>
 pkgname=snapt
-pkgver=1.4.0
+pkgver=2.0.0
 pkgrel=1
 pkgdesc="Fast, lightweight, open-source screenshot tool"
 arch=('x86_64' 'aarch64')
@@ -14,7 +14,7 @@ optdepends=('tesseract: text recognition'
             'tesseract-data-ukr: Ukrainian text recognition'
             'xdg-desktop-portal: screenshots and the shortcut on Wayland')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/vkardin/snapt/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('21e6a3c46a15a4cae8d2f045e45108521a088e7849721bafc7508977f79ae2fc')
+sha256sums=('2a084188dc3ed26b95b93a4ed71da2088861fce126c4cb85536cbc6f0ce7233e')
 
 prepare() {
   cd "$pkgname-$pkgver"
