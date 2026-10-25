@@ -93,6 +93,9 @@ The settings are stored in a plain-text `settings.ini` in the config folder.
 If Snapt is already running, that copy does it, so the command can be bound to a key in the system settings, which is how to use
 Snapt on Wayland.
 
+`snapt --logs` opens the folder with the log of the last run (`snapt.log`) and a
+`crash-<time>.txt` report for each crash. Attach them to a bug report.
+
 ## Building from source
 
 You need a recent stable [Rust toolchain](https://rustup.rs).
