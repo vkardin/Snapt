@@ -8,6 +8,7 @@
 
 mod app;
 mod capture;
+mod crash;
 mod font;
 mod i18n;
 mod icon;
@@ -28,16 +29,17 @@ use app::{App, UserEvent};
 
 const HELP: &str = "Snapt: a fast, lightweight screenshot tool.
 
-Usage: snapt [--capture | --settings]
+Usage: snapt [--capture | --settings | --logs]
 
   --capture   Take a screenshot right away. If Snapt is already running,
               that copy takes it. Bind this to a key where global
               shortcuts don't work, such as on Wayland.
   --settings  Open the settings window.
+  --logs      Open the folder with the log and crash reports.
   --version   Print the version.";
 
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    crash::init();
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|a| a == "--version" || a == "-V") {
         println!("snapt {}", env!("CARGO_PKG_VERSION"));
@@ -47,11 +49,18 @@ fn main() -> Result<()> {
         println!("{HELP}");
         return Ok(());
     }
+    if args.iter().any(|a| a == "--logs") {
+        let dir = crash::dir().ok_or_else(|| anyhow::anyhow!("no config folder"))?;
+        std::fs::create_dir_all(&dir)?;
+        open::that_detached(&dir)?;
+        return Ok(());
+    }
     // A second copy hands over to the running one, which takes the screenshot.
     let settings = args.iter().any(|a| a == "--settings");
     if instance::forward(settings) {
         return Ok(());
     }
+    crash::keep();
     log::info!("Snapt {} starting", env!("CARGO_PKG_VERSION"));
 
     let mut builder = EventLoop::<UserEvent>::with_user_event();
