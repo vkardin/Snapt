@@ -6,12 +6,15 @@ use std::{
 
 use anyhow::{Context, Result};
 use arboard::{Clipboard, ImageData};
-use chrono::{DateTime, Local};
+use chrono::{
+    DateTime, Local,
+    format::{Item, StrftimeItems},
+};
 use image::{DynamicImage, RgbaImage};
 
 use crate::{
     i18n::{self, T, t},
-    settings::{Format, Settings},
+    settings::{DEFAULT_FILE_NAME, Format, Settings},
 };
 
 /// Where finished screenshots go: the clipboard, an image file, the printer or a search.
@@ -49,7 +52,7 @@ impl Output {
     /// Saves the shot into the screenshots folder, or asks where unless quick save is on.
     /// Returns `None` when the user cancels. The folder picked becomes the new default.
     pub fn save(&mut self, shot: &RgbaImage, settings: &mut Settings) -> Result<Option<PathBuf>> {
-        let name = file_name(Local::now(), settings.format);
+        let name = file_name(Local::now(), &settings.file_name, settings.format);
         if settings.quick_save {
             fs::create_dir_all(&settings.folder)
                 .with_context(|| format!("failed to create {}", settings.folder.display()))?;
@@ -193,8 +196,23 @@ fn unique_path(dir: &Path, name: &str) -> PathBuf {
     path
 }
 
-fn file_name(time: DateTime<Local>, format: Format) -> String {
-    let stem = time.format("Snapt_%Y-%m-%d_%H-%M-%S");
+/// Fills the `strftime` template with `time`. A template chrono can't read
+/// falls back to the default, and characters no file system allows become `-`.
+fn file_name(time: DateTime<Local>, template: &str, format: Format) -> String {
+    let valid = !StrftimeItems::new(template).any(|item| matches!(item, Item::Error));
+    let template = if valid { template } else { DEFAULT_FILE_NAME };
+    let stem: String = time
+        .format(template)
+        .to_string()
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '-',
+            c if c.is_control() => '-',
+            c => c,
+        })
+        .collect();
+    let stem = stem.trim().trim_end_matches('.');
+    let stem = if stem.is_empty() { "Snapt" } else { stem };
     format!("{stem}.{}", format.extension())
 }
 
@@ -221,13 +239,29 @@ mod tests {
     fn file_name_is_sortable_and_filesystem_safe() {
         let time = Local.with_ymd_and_hms(2026, 3, 7, 9, 5, 2).unwrap();
         assert_eq!(
-            file_name(time, Format::Png),
+            file_name(time, DEFAULT_FILE_NAME, Format::Png),
             "Snapt_2026-03-07_09-05-02.png"
         );
         assert_eq!(
-            file_name(time, Format::Jpeg),
+            file_name(time, DEFAULT_FILE_NAME, Format::Jpeg),
             "Snapt_2026-03-07_09-05-02.jpg"
         );
+    }
+
+    #[test]
+    fn file_name_templates_are_filled_and_made_safe() {
+        let time = Local.with_ymd_and_hms(2026, 3, 7, 9, 5, 2).unwrap();
+        assert_eq!(
+            file_name(time, "Скрин %d.%m.%Y", Format::Png),
+            "Скрин 07.03.2026.png"
+        );
+        assert_eq!(file_name(time, "%H:%M/%S", Format::Png), "09-05-02.png");
+        // An unknown specifier would make chrono fail, so the default is used.
+        assert_eq!(
+            file_name(time, "shot %Q", Format::Png),
+            "Snapt_2026-03-07_09-05-02.png"
+        );
+        assert_eq!(file_name(time, " .. ", Format::Png), "Snapt.png");
     }
 
     #[test]

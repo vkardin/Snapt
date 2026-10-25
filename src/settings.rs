@@ -88,7 +88,14 @@ pub struct Settings {
     pub color: u32,
     pub stroke: f32,
     pub text_size: f32,
+    /// How many recent screenshots the tray menu keeps; 0 turns the history off.
+    pub history: usize,
+    /// The name of saved files, in `strftime` syntax, without the extension.
+    pub file_name: String,
 }
+
+/// The file name template used when none is set: `Snapt_2026-03-07_09-05-02`.
+pub const DEFAULT_FILE_NAME: &str = "Snapt_%Y-%m-%d_%H-%M-%S";
 
 /// Macs have no PrtSc key; LightShot for Mac uses Cmd+Shift+9.
 #[cfg(target_os = "macos")]
@@ -113,6 +120,8 @@ impl Default for Settings {
             color: 0xFF3B30,
             stroke: 3.0,
             text_size: 20.0,
+            history: crate::history::DEFAULT_LIMIT,
+            file_name: DEFAULT_FILE_NAME.into(),
         }
     }
 }
@@ -201,6 +210,8 @@ impl Settings {
                 }
                 "stroke" => s.stroke = value.parse().unwrap_or(s.stroke).clamp(1.0, 30.0),
                 "text_size" => s.text_size = value.parse().unwrap_or(s.text_size).clamp(10.0, 96.0),
+                "history" => s.history = value.parse().unwrap_or(s.history).min(50),
+                "file_name" if !value.is_empty() => s.file_name = value.into(),
                 _ => {}
             }
         }
@@ -231,6 +242,13 @@ impl Settings {
         let _ = writeln!(t, "color = #{:06X}", self.color);
         let _ = writeln!(t, "stroke = {}", self.stroke);
         let _ = writeln!(t, "text_size = {}", self.text_size);
+        let _ = writeln!(t, "# recent screenshots in the tray menu, 0 to keep none");
+        let _ = writeln!(t, "history = {}", self.history);
+        let _ = writeln!(
+            t,
+            "# saved file names: %Y year, %m month, %d day, %H hour, %M minute, %S second"
+        );
+        let _ = writeln!(t, "file_name = {}", self.file_name);
         t
     }
 }
@@ -368,6 +386,8 @@ mod tests {
             color: 0x00FF7F,
             stroke: 5.0,
             text_size: 28.0,
+            history: 0,
+            file_name: "shot %d.%m.%Y".into(),
         };
         assert_eq!(Settings::parse(&s.to_text()), s);
     }
