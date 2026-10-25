@@ -11,7 +11,11 @@ use winit::{
     window::WindowId,
 };
 
-use crate::{capture, output, tray::Tray};
+use crate::{
+    capture, output,
+    overlay::{Outcome, Overlay},
+    tray::Tray,
+};
 
 /// Events sent into the winit loop from tray and hotkey callbacks.
 #[derive(Debug)]
@@ -25,6 +29,7 @@ pub struct App {
     hotkeys: GlobalHotKeyManager,
     capture_hotkey: HotKey,
     tray: Option<Tray>,
+    overlay: Option<Overlay>,
     output: output::Output,
 }
 
@@ -41,15 +46,37 @@ impl App {
             hotkeys,
             capture_hotkey,
             tray: None,
+            overlay: None,
             output: output::Output::new()?,
         })
     }
 
-    fn take_screenshot(&mut self) {
-        let result = capture::primary_monitor().and_then(|shot| self.output.deliver(&shot));
+    /// Freezes the screens and opens the selection overlay.
+    fn start_capture(&mut self, event_loop: &ActiveEventLoop) {
+        if self.overlay.is_some() {
+            return;
+        }
+        let result = capture::all_monitors().and_then(|shots| Overlay::open(event_loop, shots));
         match result {
-            Ok(path) => log::info!("screenshot saved to {}", path.display()),
+            Ok(overlay) => self.overlay = Some(overlay),
             Err(err) => log::error!("screenshot failed: {err:#}"),
+        }
+    }
+
+    fn finish_capture(&mut self, outcome: Outcome) {
+        // Close the overlay first so it is not in the way of the save dialog.
+        self.overlay = None;
+        match outcome {
+            Outcome::Cancel => {}
+            Outcome::Copy(shot) => match self.output.copy(&shot) {
+                Ok(()) => log::info!("copied {}×{} to the clipboard", shot.width(), shot.height()),
+                Err(err) => log::error!("{err:#}"),
+            },
+            Outcome::Save(shot) => match self.output.save_as(&shot) {
+                Ok(Some(path)) => log::info!("saved {}", path.display()),
+                Ok(None) => {}
+                Err(err) => log::error!("{err:#}"),
+            },
         }
     }
 }
@@ -72,13 +99,13 @@ impl ApplicationHandler<UserEvent> for App {
         match event {
             UserEvent::Hotkey(event) => {
                 if event.id() == self.capture_hotkey.id() && event.state() == HotKeyState::Pressed {
-                    self.take_screenshot();
+                    self.start_capture(event_loop);
                 }
             }
             UserEvent::Menu(event) => {
                 let Some(tray) = &self.tray else { return };
                 if event.id == tray.capture_id {
-                    self.take_screenshot();
+                    self.start_capture(event_loop);
                 } else if event.id == tray.open_folder_id {
                     if let Err(err) = open::that(self.output.dir()) {
                         log::error!("failed to open the screenshots folder: {err}");
@@ -90,9 +117,20 @@ impl ApplicationHandler<UserEvent> for App {
         }
     }
 
-    fn window_event(&mut self, _: &ActiveEventLoop, _: WindowId, _: WindowEvent) {}
+    fn window_event(&mut self, _: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        let Some(overlay) = &mut self.overlay else {
+            return;
+        };
+        if !overlay.owns(id) {
+            return;
+        }
+        if let Some(outcome) = overlay.window_event(id, event) {
+            self.finish_capture(outcome);
+        }
+    }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        self.overlay = None;
         let _ = self.hotkeys.unregister(self.capture_hotkey);
         log::info!("Snapt stopped");
     }

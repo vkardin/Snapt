@@ -1,19 +1,38 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, ensure};
 use image::RgbaImage;
 use xcap::Monitor;
 
-/// Captures the whole primary monitor.
-///
-/// This is the simplest useful capture. Region selection on every monitor
-/// replaces it in the next milestone.
-pub fn primary_monitor() -> Result<RgbaImage> {
+/// A frozen image of one monitor.
+pub struct Shot {
+    /// Monitor position as reported by the OS capture API.
+    pub x: i32,
+    pub y: i32,
+    pub image: RgbaImage,
+}
+
+/// Captures every monitor. Monitors that fail are skipped with a warning.
+pub fn all_monitors() -> Result<Vec<Shot>> {
     let monitors = Monitor::all().context("failed to list monitors")?;
-    let monitor = monitors
+    let shots: Vec<Shot> = monitors
         .iter()
-        .find(|m| m.is_primary().unwrap_or(false))
-        .or_else(|| monitors.first())
-        .ok_or_else(|| anyhow!("no monitors found"))?;
-    monitor
-        .capture_image()
-        .context("failed to capture the screen")
+        .filter_map(|m| match capture(m) {
+            Ok(shot) => Some(shot),
+            Err(err) => {
+                log::warn!("skipping a monitor: {err:#}");
+                None
+            }
+        })
+        .collect();
+    ensure!(!shots.is_empty(), "could not capture any monitor");
+    Ok(shots)
+}
+
+fn capture(monitor: &Monitor) -> Result<Shot> {
+    Ok(Shot {
+        x: monitor.x()?,
+        y: monitor.y()?,
+        image: monitor
+            .capture_image()
+            .context("failed to capture the screen")?,
+    })
 }
