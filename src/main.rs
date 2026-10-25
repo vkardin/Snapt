@@ -9,12 +9,15 @@
 mod app;
 mod capture;
 mod font;
+mod i18n;
 mod icon;
 mod instance;
 mod output;
 mod overlay;
+mod paint;
 mod platform;
 mod settings;
+mod settings_window;
 mod tray;
 
 use anyhow::Result;
@@ -24,11 +27,12 @@ use app::{App, UserEvent};
 
 const HELP: &str = "Snapt: a fast, lightweight screenshot tool.
 
-Usage: snapt [--capture]
+Usage: snapt [--capture | --settings]
 
   --capture   Take a screenshot right away. If Snapt is already running,
               that copy takes it. Bind this to a key where global
               shortcuts don't work, such as on Wayland.
+  --settings  Open the settings window.
   --version   Print the version.";
 
 fn main() -> Result<()> {
@@ -43,7 +47,8 @@ fn main() -> Result<()> {
         return Ok(());
     }
     // A second copy hands over to the running one, which takes the screenshot.
-    if instance::forward() {
+    let settings = args.iter().any(|a| a == "--settings");
+    if instance::forward(settings) {
         return Ok(());
     }
     log::info!("Snapt {} starting", env!("CARGO_PKG_VERSION"));
@@ -69,7 +74,7 @@ fn main() -> Result<()> {
 
     instance::listen(event_loop.create_proxy());
 
-    let mut app = App::new(args.iter().any(|a| a == "--capture"))?;
+    let mut app = App::new(args.iter().any(|a| a == "--capture"), settings)?;
     event_loop.run_app(&mut app)?;
     Ok(())
 }

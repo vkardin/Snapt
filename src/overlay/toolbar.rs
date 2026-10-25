@@ -2,14 +2,15 @@
 //! right, actions below, plus the color palette and button tooltips.
 
 use tiny_skia::{
-    Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, Rect as SkRect, Stroke,
-    Transform,
+    FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, Rect as SkRect, Stroke, Transform,
 };
 
 use super::annotate::{Tool, rgb};
 use super::render::{self, ACCENT};
 use super::selection::{Point, Rect};
 use crate::font;
+use crate::i18n::{T, t};
+use crate::paint::fill_round;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Button {
@@ -48,21 +49,22 @@ const MOD: &str = "Ctrl";
 
 impl Button {
     pub fn tooltip(self) -> String {
-        match self {
-            Button::Tool(Tool::Pen) => "Pen (P)".into(),
-            Button::Tool(Tool::Line) => "Line (L)".into(),
-            Button::Tool(Tool::Arrow) => "Arrow (A)".into(),
-            Button::Tool(Tool::Rect) => "Rectangle (R)".into(),
-            Button::Tool(Tool::Marker) => "Marker (M)".into(),
-            Button::Tool(Tool::Text) => "Text (T)".into(),
-            Button::Color => "Color".into(),
-            Button::Undo => format!("Undo ({MOD}+Z)"),
-            Button::Close => "Close (Esc)".into(),
-            Button::Search => format!("Search for similar images ({MOD}+F)"),
-            Button::Print => format!("Print ({MOD}+P)"),
-            Button::Copy => format!("Copy ({MOD}+C)"),
-            Button::Save => format!("Save ({MOD}+S)"),
-        }
+        let (text, key) = match self {
+            Button::Tool(Tool::Pen) => (T::Pen, "P".to_string()),
+            Button::Tool(Tool::Line) => (T::Line, "L".into()),
+            Button::Tool(Tool::Arrow) => (T::Arrow, "A".into()),
+            Button::Tool(Tool::Rect) => (T::Rectangle, "R".into()),
+            Button::Tool(Tool::Marker) => (T::Marker, "M".into()),
+            Button::Tool(Tool::Text) => (T::Text, "T".into()),
+            Button::Color => return t(T::Color).into(),
+            Button::Undo => (T::Undo, format!("{MOD}+Z")),
+            Button::Close => (T::Close, "Esc".into()),
+            Button::Search => (T::Search, format!("{MOD}+F")),
+            Button::Print => (T::Print, format!("{MOD}+P")),
+            Button::Copy => (T::Copy, format!("{MOD}+C")),
+            Button::Save => (T::Save, format!("{MOD}+S")),
+        };
+        format!("{} ({key})", t(text))
     }
 }
 
@@ -335,50 +337,6 @@ fn overlaps(a: Rect, b: Rect) -> bool {
 fn inset(r: Option<SkRect>, by: f32) -> Option<SkRect> {
     let r = r?;
     SkRect::from_ltrb(r.left() + by, r.top() + by, r.right() - by, r.bottom() - by)
-}
-
-/// Fills a rounded rectangle in `color` at `opacity`.
-pub fn fill_round(
-    pixmap: &mut Pixmap,
-    rect: Option<SkRect>,
-    radius: f32,
-    color: u32,
-    opacity: f32,
-) {
-    let Some(rect) = rect else { return };
-    let Some(path) = round_rect(rect, radius) else {
-        return;
-    };
-    let mut paint = Paint::default();
-    let [r, g, b] = rgb(color);
-    paint.set_color(Color::from_rgba8(r, g, b, (opacity * 255.0).round() as u8));
-    paint.anti_alias = true;
-    pixmap.fill_path(
-        &path,
-        &paint,
-        FillRule::Winding,
-        Transform::identity(),
-        None,
-    );
-}
-
-fn round_rect(r: SkRect, radius: f32) -> Option<tiny_skia::Path> {
-    let k = radius.min(r.width() / 2.0).min(r.height() / 2.0);
-    // Cubic approximation of a quarter circle.
-    let c = k * 0.4477;
-    let (l, t, rt, b) = (r.left(), r.top(), r.right(), r.bottom());
-    let mut p = PathBuilder::new();
-    p.move_to(l + k, t);
-    p.line_to(rt - k, t);
-    p.cubic_to(rt - c, t, rt, t + c, rt, t + k);
-    p.line_to(rt, b - k);
-    p.cubic_to(rt, b - c, rt - c, b, rt - k, b);
-    p.line_to(l + k, b);
-    p.cubic_to(l + c, b, l, b - c, l, b - k);
-    p.line_to(l, t + k);
-    p.cubic_to(l, t + c, l + c, t, l + k, t);
-    p.close();
-    p.finish()
 }
 
 /// Draws a button's icon on a 16 × 16 grid mapped through `transform`.

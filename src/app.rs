@@ -9,10 +9,11 @@ use winit::{
 };
 
 use crate::{
-    capture, output,
+    capture, i18n, output,
     overlay::{Outcome, Overlay, Style},
     platform,
-    settings::{self, Settings},
+    settings::{self, DEFAULT_HOTKEY, Settings},
+    settings_window::{Action, Notice, SettingsWindow},
     tray::{Command, Tray},
 };
 
@@ -23,6 +24,8 @@ pub enum UserEvent {
     Hotkey(GlobalHotKeyEvent),
     /// Another copy of Snapt was started and asks for a screenshot.
     Capture,
+    /// Another copy of Snapt was started with `--settings`.
+    Settings,
 }
 
 pub struct App {
@@ -31,17 +34,21 @@ pub struct App {
     capture_hotkey: Option<HotKey>,
     tray: Option<Tray>,
     overlay: Option<Overlay>,
+    settings_window: Option<SettingsWindow>,
     settings: Settings,
     style: Style,
     capture_now: bool,
+    settings_now: bool,
     output: output::Output,
 }
 
 impl App {
-    /// `capture_now` opens the overlay as soon as the app starts.
-    pub fn new(capture_now: bool) -> Result<Self> {
+    /// `capture_now` opens the overlay as soon as the app starts, `settings_now`
+    /// the settings window.
+    pub fn new(capture_now: bool, settings_now: bool) -> Result<Self> {
         let hotkeys = GlobalHotKeyManager::new().context("failed to start the hotkey manager")?;
         let settings = Settings::load();
+        i18n::set(settings.lang());
         let style = Style {
             tool: None,
             color: settings.color,
@@ -53,31 +60,44 @@ impl App {
             capture_hotkey: None,
             tray: None,
             overlay: None,
+            settings_window: None,
             settings,
             style,
             capture_now,
+            settings_now,
             output: output::Output::new()?,
         };
         app.register_hotkey();
         Ok(app)
     }
 
-    /// (Re)registers the capture shortcut from the settings.
-    fn register_hotkey(&mut self) {
-        if let Some(old) = self.capture_hotkey.take() {
-            let _ = self.hotkeys.unregister(old);
-        }
+    /// (Re)registers the capture shortcut from the settings. Returns false when
+    /// the shortcut is invalid or another app owns it; Snapt then still works
+    /// from the tray menu.
+    fn register_hotkey(&mut self) -> bool {
+        self.unregister_hotkey();
         let hotkey: HotKey = match self.settings.hotkey.parse() {
             Ok(hotkey) => hotkey,
             Err(err) => {
                 log::warn!("bad capture shortcut {:?}: {err}", self.settings.hotkey);
-                return;
+                return false;
             }
         };
         match self.hotkeys.register(hotkey) {
-            Ok(()) => self.capture_hotkey = Some(hotkey),
-            // Another app may own the shortcut. Snapt still works from the tray menu.
-            Err(err) => log::warn!("could not register {}: {err}", self.settings.hotkey),
+            Ok(()) => {
+                self.capture_hotkey = Some(hotkey);
+                true
+            }
+            Err(err) => {
+                log::warn!("could not register {}: {err}", self.settings.hotkey);
+                false
+            }
+        }
+    }
+
+    fn unregister_hotkey(&mut self) {
+        if let Some(old) = self.capture_hotkey.take() {
+            let _ = self.hotkeys.unregister(old);
         }
     }
 
@@ -151,50 +171,126 @@ impl App {
     fn run_command(&mut self, event_loop: &ActiveEventLoop, command: Command) {
         match command {
             Command::Capture => self.start_capture(event_loop),
-            Command::OpenFolder => {
-                let _ = std::fs::create_dir_all(&self.settings.folder);
-                if let Err(err) = open::that_detached(&self.settings.folder) {
-                    log::error!("failed to open the screenshots folder: {err}");
+            Command::OpenFolder => self.open_folder(),
+            Command::Settings => self.open_settings(event_loop),
+            Command::Quit => event_loop.exit(),
+        }
+    }
+
+    fn open_folder(&self) {
+        let _ = std::fs::create_dir_all(&self.settings.folder);
+        if let Err(err) = open::that_detached(&self.settings.folder) {
+            log::error!("failed to open the screenshots folder: {err}");
+        }
+    }
+
+    fn open_settings(&mut self, event_loop: &ActiveEventLoop) {
+        if self.settings_window.is_none() {
+            match SettingsWindow::open(event_loop) {
+                Ok(window) => self.settings_window = Some(window),
+                Err(err) => {
+                    log::error!("{err:#}");
+                    return;
                 }
             }
-            Command::Hotkey(hotkey) => {
-                self.settings.hotkey = hotkey;
+        }
+        if let Some(window) = &mut self.settings_window {
+            window.show(&self.settings);
+        }
+    }
+
+    /// Applies a change made in the settings window.
+    fn apply(&mut self, action: Action) {
+        let mut notice = None;
+        match action {
+            Action::Close => {
+                // The window is hidden, not destroyed; free its memory anyway.
+                self.settings_window = None;
                 self.register_hotkey();
+                return;
             }
-            Command::Format(format) => self.settings.format = format,
-            Command::ChooseFolder => {
-                let picked = rfd::FileDialog::new()
-                    .set_title("Screenshots folder")
-                    .set_directory(&self.settings.folder)
-                    .pick_folder();
-                if let Some(folder) = picked {
-                    self.settings.folder = folder;
+            Action::Language(lang) => {
+                self.settings.language = lang;
+                i18n::set(self.settings.lang());
+                // Menu texts can't all be changed in place, so the tray is rebuilt.
+                self.tray = None;
+                match Tray::new(&self.settings) {
+                    Ok(tray) => self.tray = Some(tray),
+                    Err(err) => log::error!("failed to rebuild the tray icon: {err:#}"),
+                }
+                if let Some(window) = &self.settings_window {
+                    window.retitle();
                 }
             }
-            Command::QuickSave => self.settings.quick_save = !self.settings.quick_save,
-            Command::Autostart => {
+            Action::Autostart => {
                 let on = !self.settings.autostart;
                 match settings::set_autostart(on) {
                     Ok(()) => self.settings.autostart = on,
                     Err(err) => log::error!("failed to change start at login: {err:#}"),
                 }
             }
-            Command::OpenSettings => {
-                // Write the file first so there is something to open.
-                self.save_settings();
-                if let Some(path) = Settings::path()
-                    && let Err(err) = open::that_detached(path)
-                {
-                    log::error!("failed to open the settings file: {err}");
+            Action::ReplaceSystem => {
+                let on = !self.settings.replace_system;
+                match platform::replace_system_screenshot(on, &self.settings.hotkey) {
+                    Ok(()) => {
+                        self.settings.replace_system = on;
+                        // The system tool may have held the key until now.
+                        self.register_hotkey();
+                    }
+                    Err(err) => {
+                        log::error!("failed to replace the system screenshot tool: {err:#}");
+                        notice = Some(Notice::ReplaceFailed);
+                    }
                 }
-                return;
             }
-            Command::Quit => {
-                event_loop.exit();
-                return;
+            // While the field listens, the current shortcut must not fire.
+            Action::Recording(true) => self.unregister_hotkey(),
+            Action::Recording(false) => {
+                self.register_hotkey();
+            }
+            Action::Hotkey(hotkey) => notice = self.set_hotkey(hotkey),
+            Action::ResetHotkey => notice = self.set_hotkey(DEFAULT_HOTKEY.into()),
+            Action::ChangeFolder => {
+                let picked = rfd::FileDialog::new()
+                    .set_title(i18n::t(i18n::T::FolderTitle))
+                    .set_directory(&self.settings.folder)
+                    .pick_folder();
+                if let Some(folder) = picked {
+                    self.settings.folder = folder;
+                }
+            }
+            Action::OpenFolder => self.open_folder(),
+            Action::Format(format) => self.settings.format = format,
+            Action::QuickSave => self.settings.quick_save = !self.settings.quick_save,
+            Action::Website => {
+                if let Err(err) = open::that_detached(env!("CARGO_PKG_HOMEPAGE")) {
+                    log::error!("failed to open the website: {err}");
+                }
             }
         }
         self.save_settings();
+        if let Some(window) = &mut self.settings_window {
+            if notice.is_some() {
+                window.notice = notice;
+            }
+            window.request_redraw();
+        }
+    }
+
+    /// Switches to `hotkey`, keeping the old one when the new one can't be registered.
+    fn set_hotkey(&mut self, hotkey: String) -> Option<Notice> {
+        let previous = std::mem::replace(&mut self.settings.hotkey, hotkey);
+        if !self.register_hotkey() {
+            self.settings.hotkey = previous;
+            self.register_hotkey();
+            return Some(Notice::ShortcutTaken);
+        }
+        if self.settings.replace_system
+            && let Err(err) = platform::replace_system_screenshot(true, &self.settings.hotkey)
+        {
+            log::warn!("failed to update the system shortcut: {err:#}");
+        }
+        None
     }
 }
 
@@ -215,6 +311,9 @@ impl ApplicationHandler<UserEvent> for App {
             if self.capture_now {
                 self.start_capture(event_loop);
             }
+            if self.settings_now {
+                self.open_settings(event_loop);
+            }
         }
     }
 
@@ -230,6 +329,7 @@ impl ApplicationHandler<UserEvent> for App {
                 }
             }
             UserEvent::Capture => self.start_capture(event_loop),
+            UserEvent::Settings => self.open_settings(event_loop),
             UserEvent::Menu(event) => {
                 let command = self.tray.as_ref().and_then(|t| t.command(&event.id));
                 if let Some(command) = command {
@@ -240,6 +340,14 @@ impl ApplicationHandler<UserEvent> for App {
     }
 
     fn window_event(&mut self, _: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        if let Some(window) = &mut self.settings_window
+            && window.id() == id
+        {
+            if let Some(action) = window.window_event(event, &self.settings) {
+                self.apply(action);
+            }
+            return;
+        }
         let Some(overlay) = &mut self.overlay else {
             return;
         };
