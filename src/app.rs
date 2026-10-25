@@ -154,9 +154,8 @@ impl App {
             return;
         }
         let format = self.settings.color_format;
-        let result = capture::all_monitors().and_then(|shots| {
-            Overlay::open(event_loop, shots, self.style, area, pick, format)
-        });
+        let result = capture::all_monitors()
+            .and_then(|shots| Overlay::open(event_loop, shots, self.style, area, pick, format));
         match result {
             Ok(overlay) => self.overlay = Some(overlay),
             Err(err) => log::error!("screenshot failed: {err:#}"),
