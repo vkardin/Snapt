@@ -497,6 +497,7 @@ fn build(
             for (feature, name) in [
                 (Feature::Recognize, t(T::Recognize)),
                 (Feature::Scroll, t(T::Scroll)),
+                (Feature::Record, t(T::Record)),
                 (Feature::Pin, t(T::Pin)),
                 (Feature::Search, t(T::Search)),
                 (Feature::Print, t(T::Print)),
@@ -679,6 +680,7 @@ fn shortcuts(
             Shortcut::RepeatArea => t(T::RepeatArea),
             Shortcut::Recognize => t(T::Recognize),
             Shortcut::Scroll => t(T::Scroll),
+            Shortcut::Record => t(T::Record),
             Shortcut::Pin => t(T::Pin),
             Shortcut::Copy => t(T::Copy),
             Shortcut::Save => t(T::Save),
