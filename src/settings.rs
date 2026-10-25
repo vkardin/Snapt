@@ -40,6 +40,8 @@ pub struct Settings {
     pub autostart: bool,
     /// Take over the PrtSc key from the system's own screenshot tool.
     pub replace_system: bool,
+    /// Look for a new release once a day.
+    pub auto_update: bool,
     /// The interface language; `None` follows the system.
     pub language: Option<Lang>,
     pub color: u32,
@@ -62,6 +64,7 @@ impl Default for Settings {
             quick_save: false,
             autostart: false,
             replace_system: false,
+            auto_update: true,
             language: None,
             color: 0xFF3B30,
             stroke: 3.0,
@@ -124,6 +127,7 @@ impl Settings {
                 "quick_save" => s.quick_save = value == "true",
                 "autostart" => s.autostart = value == "true",
                 "replace_system" => s.replace_system = value == "true",
+                "auto_update" => s.auto_update = value != "false",
                 "language" => s.language = Lang::from_code(value),
                 "color" => {
                     if let Ok(c) = u32::from_str_radix(value.trim_start_matches('#'), 16) {
@@ -150,6 +154,7 @@ impl Settings {
         let _ = writeln!(t, "quick_save = {}", self.quick_save);
         let _ = writeln!(t, "autostart = {}", self.autostart);
         let _ = writeln!(t, "replace_system = {}", self.replace_system);
+        let _ = writeln!(t, "auto_update = {}", self.auto_update);
         let language = self.language.map_or("auto", Lang::code);
         let _ = writeln!(t, "language = {language}");
         let _ = writeln!(t, "color = #{:06X}", self.color);
@@ -285,6 +290,7 @@ mod tests {
             quick_save: true,
             autostart: true,
             replace_system: true,
+            auto_update: false,
             language: Some(Lang::Uk),
             color: 0x00FF7F,
             stroke: 5.0,

@@ -16,6 +16,7 @@ pub enum Command {
     Capture,
     OpenFolder,
     Settings,
+    Update,
     Quit,
 }
 
@@ -28,7 +29,8 @@ pub struct Tray {
 }
 
 impl Tray {
-    pub fn new(settings: &Settings) -> Result<Self> {
+    /// `update` is the version to offer at the top of the menu, if one is out.
+    pub fn new(settings: &Settings, update: Option<&str>) -> Result<Self> {
         let capture = MenuItem::new(t(T::TakeScreenshot), true, None);
         let open_folder = MenuItem::new(t(T::OpenFolder), true, None);
         let settings_item = MenuItem::new(t(T::SettingsMenu), true, None);
@@ -46,6 +48,13 @@ impl Tray {
         );
 
         let menu = Menu::new();
+        let mut commands = Vec::new();
+        if let Some(version) = update {
+            let item = MenuItem::new(t(T::TrayUpdate).replace("{}", version), true, None);
+            menu.append_items(&[&item, &PredefinedMenuItem::separator()])
+                .context("failed to build the tray menu")?;
+            commands.push((item.id().clone(), Command::Update));
+        }
         menu.append_items(&[
             &capture,
             &open_folder,
@@ -56,18 +65,21 @@ impl Tray {
         ])
         .context("failed to build the tray menu")?;
 
-        let commands = vec![
+        commands.extend([
             (capture.id().clone(), Command::Capture),
             (open_folder.id().clone(), Command::OpenFolder),
             (settings_item.id().clone(), Command::Settings),
             (quit.id().clone(), Command::Quit),
-        ];
+        ]);
 
         let icon = Icon::from_rgba(icon::rgba(), icon::SIZE, icon::SIZE)
             .context("failed to load the tray icon")?;
         let tray = TrayIconBuilder::new()
             .with_id("snapt")
-            .with_tooltip("Snapt")
+            .with_tooltip(match update {
+                Some(version) => t(T::TrayUpdate).replace("{}", version),
+                None => "Snapt".into(),
+            })
             .with_icon(icon)
             .with_menu(Box::new(menu))
             .build()
