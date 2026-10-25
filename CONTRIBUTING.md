@@ -44,6 +44,11 @@ in [`site/`](site), in English (`index.html`), Russian (`ru/`) and Ukrainian (`u
 `python3 -m http.server -d site` and open http://localhost:8000. Changes to `site/`
 are published to GitHub Pages when they land on `main`.
 
+## Packages
+
+Manifests for winget, Homebrew, the AUR and Flathub are in [`packaging/`](packaging), with how
+to update and publish them after a release.
+
 ## Guidelines
 
 - Keep Snapt small and fast: think twice before adding a dependency.

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.vkardin.snapt</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Snapt</name>
+  <summary>Fast, lightweight screenshot tool</summary>
+  <summary xml:lang="ru">Быстрая и лёгкая программа для скриншотов</summary>
+  <summary xml:lang="uk">Швидка й легка програма для знімків екрана</summary>
+  <developer id="io.github.vkardin">
+    <name>vkardin</name>
+  </developer>
+  <description>
+    <p>
+      Snapt lives in the tray. Press the shortcut, select an area of the screen, draw on it
+      with a pen, lines, arrows, rectangles, a marker or text, and copy it, save it, print it
+      or search for similar images.
+    </p>
+    <ul>
+      <li>Select an area on any monitor, with handles to move and resize it</li>
+      <li>Pick any color, or take one from the screen with the eyedropper</li>
+      <li>Copy the text in the selection</li>
+      <li>In English, Russian and Ukrainian</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.vkardin.snapt.desktop</launchable>
+  <url type="homepage">https://vkardin.github.io/snapt/</url>
+  <url type="bugtracker">https://github.com/vkardin/snapt/issues</url>
+  <url type="vcs-browser">https://github.com/vkardin/snapt</url>
+  <url type="donation">https://vkardin.github.io/snapt/#support</url>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://vkardin.github.io/snapt/social-preview.png</image>
+      <caption>A selection with drawings and the toolbar</caption>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <releases>
+    <release version="1.3.0" date="2026-10-25">
+      <description>
+        <p>Any color with an eyedropper, and text recognition.</p>
+      </description>
+    </release>
+  </releases>
+</component>

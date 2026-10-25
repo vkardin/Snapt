@@ -117,6 +117,27 @@ pub fn screenshot() -> Result<RgbaImage> {
     Ok(image?.to_rgba8())
 }
 
+/// Asks the Background portal to start Snapt at login, which is how an app
+/// in a Flatpak sandbox does it.
+pub fn autostart(on: bool) -> Result<()> {
+    let conn = connect()?;
+    let results = request(&conn, "org.freedesktop.portal.Background", |p, token| {
+        let options = HashMap::from([
+            ("handle_token", Value::from(token)),
+            ("reason", Value::from("Start Snapt at login")),
+            ("autostart", Value::from(on)),
+            ("commandline", Value::from(vec!["snapt"])),
+        ]);
+        p.call_method("RequestBackground", &("", options))
+    })?;
+    let granted = results
+        .get("autostart")
+        .and_then(|v| v.downcast_ref::<bool>().ok())
+        .unwrap_or(false);
+    ensure!(granted == on, "the desktop did not allow starting at login");
+    Ok(())
+}
+
 /// `file:///a%20b.png` → `/a b.png`.
 fn file_path(uri: &str) -> Option<std::path::PathBuf> {
     let path = uri.strip_prefix("file://")?;
@@ -343,5 +364,12 @@ mod tests {
         for _ in 0..2 {
             receive.recv_timeout(Duration::from_secs(5)).unwrap();
         }
+    }
+
+    #[test]
+    #[ignore]
+    fn portal_autostart() {
+        autostart(true).unwrap();
+        autostart(false).unwrap();
     }
 }
