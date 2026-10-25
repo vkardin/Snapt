@@ -23,6 +23,7 @@ pub enum Button {
     Print,
     Pin,
     Scroll,
+    Record,
     Copy,
     Save,
     /// Picks the drawing color from the screen; sits in the palette.
@@ -60,11 +61,13 @@ fn actions() -> Vec<Button> {
 }
 
 const ACTIONS: [Button; 7] = [
+const ACTIONS: [Button; 8] = [
     Button::Recognize,
     Button::Search,
     Button::Print,
     Button::Pin,
     Button::Scroll,
+    Button::Record,
     Button::Copy,
     Button::Save,
 ];
@@ -99,6 +102,7 @@ impl Button {
             Button::Print => (T::Print, format!("{MOD}+P")),
             Button::Pin => (T::Pin, "F3".into()),
             Button::Scroll => (T::Scroll, format!("{MOD}+Shift+S")),
+            Button::Record => (T::Record, format!("{MOD}+Shift+R")),
             Button::Copy => (T::Copy, format!("{MOD}+C")),
             Button::Save => (T::Save, format!("{MOD}+S")),
             Button::Eyedropper => (T::Eyedropper, "I".into()),
@@ -603,6 +607,14 @@ fn icon(pixmap: &mut Pixmap, button: Button, color: u32, transform: Transform) {
             p.move_to(6.5, 9.5);
             p.line_to(8.0, 11.0);
             p.line_to(9.5, 9.5);
+        }
+        Button::Record => {
+            // A camera: body and lens.
+            p.push_rect(SkRect::from_xywh(2.0, 4.5, 8.5, 7.0).unwrap());
+            p.move_to(10.5, 7.0);
+            p.line_to(14.0, 5.0);
+            p.line_to(14.0, 11.0);
+            p.line_to(10.5, 9.0);
         }
         Button::Copy => {
             p.push_rect(SkRect::from_xywh(5.5, 5.5, 8.0, 8.5).unwrap());

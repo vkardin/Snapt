@@ -39,6 +39,7 @@ No accounts, no cloud, a few megabytes on disk.
 - Copy it, save it as PNG or JPEG, print it, or search Google Lens for similar images.
 - Pin it on top of all windows to keep it in sight while you work, as in Snipaste.
 - Scrolling screenshots (experimental): scroll a long page and Snapt glues it into one image.
+- Record an area as a GIF, or as an MP4 when [ffmpeg](https://ffmpeg.org) is installed.
 - From the tray: copy the full screen in one click, take a screenshot after 3, 5 or 10
   seconds, select the last area again, and reopen your recent screenshots.
 - A settings window with three pages: general options, a shortcut for every action, and
@@ -81,6 +82,7 @@ The screen freezes, then:
 | Copy the text in it | `Ctrl+Shift+C` |
 | Pin it on top of all windows | `F3` |
 | Scrolling screenshot (experimental) | `Ctrl+Shift+S`, then scroll the page down |
+| Record a video of the area | `Ctrl+Shift+R`; `Enter` stops, `Esc` cancels |
 | Pick a color from the screen | `I`, then click; the HEX code is copied too |
 | Cancel | `Esc` or right-click |
 
@@ -96,6 +98,10 @@ the scroll button, then scroll down at an even pace. A panel shows the height so
 `Enter` or click it when done (`Esc` cancels). The result is copied and pinned so you can
 check it and save it with `Ctrl+S`. It is experimental: sticky headers and animations can
 confuse the gluing.
+
+To record a video, select an area and press `Ctrl+Shift+R` or the camera button. Snapt records
+10 frames a second, for up to two minutes; the panel shows the time. Press `Enter` or click
+the panel to stop and choose where to save it: MP4 if `ffmpeg` is on the `PATH`, GIF always.
 
 The tray menu also has:
 
