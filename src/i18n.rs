@@ -145,6 +145,9 @@ pub enum T {
     HistoryEmpty,
     ClearHistory,
     Pin,
+    Scroll,
+    ScrollHint,
+    ScrollHeight,
 }
 
 /// The current language's text for `key`.
@@ -433,6 +436,15 @@ pub fn tr(lang: Lang, key: T) -> &'static str {
         (Pin, En) => "Pin to screen",
         (Pin, Ru) => "Закрепить поверх окон",
         (Pin, Uk) => "Закріпити поверх вікон",
+        (Scroll, En) => "Scrolling screenshot",
+        (Scroll, Ru) => "Скриншот с прокруткой",
+        (Scroll, Uk) => "Знімок із прокручуванням",
+        (ScrollHint, En) => "Scroll down. Enter or click: done",
+        (ScrollHint, Ru) => "Прокручивайте вниз. Enter или клик: готово",
+        (ScrollHint, Uk) => "Прокручуйте вниз. Enter або клік: готово",
+        (ScrollHeight, En) => "{} px so far · Esc cancels",
+        (ScrollHeight, Ru) => "Уже {} px · Esc отменяет",
+        (ScrollHeight, Uk) => "Уже {} px · Esc скасовує",
     }
 }
 

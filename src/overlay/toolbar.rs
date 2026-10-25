@@ -22,6 +22,7 @@ pub enum Button {
     Search,
     Print,
     Pin,
+    Scroll,
     Copy,
     Save,
     /// Picks the drawing color from the screen; sits in the palette.
@@ -42,11 +43,12 @@ const TOOLS: [Button; 12] = [
     Button::Undo,
     Button::Close,
 ];
-const ACTIONS: [Button; 6] = [
+const ACTIONS: [Button; 7] = [
     Button::Recognize,
     Button::Search,
     Button::Print,
     Button::Pin,
+    Button::Scroll,
     Button::Copy,
     Button::Save,
 ];
@@ -80,6 +82,7 @@ impl Button {
             Button::Search => (T::Search, format!("{MOD}+F")),
             Button::Print => (T::Print, format!("{MOD}+P")),
             Button::Pin => (T::Pin, "F3".into()),
+            Button::Scroll => (T::Scroll, format!("{MOD}+Shift+S")),
             Button::Copy => (T::Copy, format!("{MOD}+C")),
             Button::Save => (T::Save, format!("{MOD}+S")),
             Button::Eyedropper => (T::Eyedropper, "I".into()),
@@ -571,6 +574,18 @@ fn icon(pixmap: &mut Pixmap, button: Button, color: u32, transform: Transform) {
             p.line_to(9.5, 2.5);
             p.move_to(8.0, 9.5);
             p.line_to(8.0, 14.0);
+        }
+        Button::Scroll => {
+            // A page with arrows up and down.
+            p.push_rect(SkRect::from_xywh(4.5, 2.5, 7.0, 11.0).unwrap());
+            p.move_to(8.0, 5.0);
+            p.line_to(8.0, 11.0);
+            p.move_to(6.5, 6.5);
+            p.line_to(8.0, 5.0);
+            p.line_to(9.5, 6.5);
+            p.move_to(6.5, 9.5);
+            p.line_to(8.0, 11.0);
+            p.line_to(9.5, 9.5);
         }
         Button::Copy => {
             p.push_rect(SkRect::from_xywh(5.5, 5.5, 8.0, 8.5).unwrap());
