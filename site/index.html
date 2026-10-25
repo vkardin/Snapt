@@ -212,11 +212,15 @@ try {
     </details>
     <details>
       <summary>Does Snapt upload my screenshots?</summary>
-      <p>No. Snapt has no servers and makes no network requests. Everything stays on your computer.</p>
+      <p>No. Snapt has no servers of its own and never sends your screenshots anywhere. The only thing it asks the internet is GitHub, once a day, whether a new version is out, and you can turn that off in the settings.</p>
     </details>
     <details>
       <summary>How do I change the shortcut or the save folder?</summary>
-      <p>Open <b>Settings</b> in the tray menu (menu bar on macOS). There you can change the shortcut, the folder and the format (PNG or JPEG), save without asking, and start Snapt with the system.</p>
+      <p>Open <b>Settings</b> in the tray menu (menu bar on macOS), or run <code>snapt --settings</code>. In the settings window you can switch the language, record a new shortcut, pick the folder and format (PNG or JPEG), save without asking, start Snapt with the system, and let it replace the system screenshot tool on PrtSc.</p>
+    </details>
+    <details>
+      <summary>How does Snapt update?</summary>
+      <p>It checks GitHub Releases once a day and offers <b>Update</b> in the tray. The Windows installer, the macOS app and the AppImage update themselves; for the <code>.deb</code>, the download page opens. You can turn the check off in the settings.</p>
     </details>
     <details>
       <summary>PrtSc does nothing on Wayland</summary>
