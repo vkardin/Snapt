@@ -19,6 +19,7 @@ mod overlay;
 mod paint;
 mod pin;
 mod platform;
+mod scroll;
 mod settings;
 mod settings_window;
 mod tray;
