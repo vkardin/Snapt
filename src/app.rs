@@ -14,7 +14,7 @@ use crate::{
     history::History,
     i18n::{self, T, t},
     ocr, output,
-    overlay::{Outcome, Overlay, Style},
+    overlay::{Area, Outcome, Overlay, Style},
     pin::{Pin, PinAction},
     platform,
     settings::{self, DEFAULT_HOTKEY, Settings},
@@ -48,6 +48,8 @@ pub struct App {
     overlay: Option<Overlay>,
     pins: Vec<Pin>,
     history: History,
+    /// The area selected last time, for "Repeat last area".
+    last_area: Option<Area>,
     settings_window: Option<SettingsWindow>,
     settings: Settings,
     style: Style,
@@ -84,6 +86,7 @@ impl App {
             overlay: None,
             pins: Vec::new(),
             history: History::load(settings.history),
+            last_area: None,
             settings_window: None,
             settings,
             style,
@@ -141,26 +144,33 @@ impl App {
         }
     }
 
-    /// Freezes the screens and opens the selection overlay.
-    fn start_capture(&mut self, event_loop: &ActiveEventLoop) {
+    /// Freezes the screens and opens the selection overlay, with `area`
+    /// already selected when given.
+    fn start_capture(&mut self, event_loop: &ActiveEventLoop, area: Option<Area>) {
         if self.overlay.is_some() {
             return;
         }
         if !platform::screen_access() {
             return;
         }
-        let result =
-            capture::all_monitors().and_then(|shots| Overlay::open(event_loop, shots, self.style));
+        let result = capture::all_monitors()
+            .and_then(|shots| Overlay::open(event_loop, shots, self.style, area));
         match result {
             Ok(overlay) => self.overlay = Some(overlay),
             Err(err) => log::error!("screenshot failed: {err:#}"),
         }
     }
 
-    fn finish_capture(&mut self, outcome: Outcome) {
+    fn finish_capture(&mut self, event_loop: &ActiveEventLoop, outcome: Outcome) {
         // Close the overlay first so it is not in the way of the save dialog.
         if let Some(overlay) = self.overlay.take() {
             self.style = overlay.style();
+            if let Some(area) = overlay.area() {
+                self.last_area = Some(area);
+                if let Some(tray) = &self.tray {
+                    tray.set_can_repeat(true);
+                }
+            }
         }
         let (color, stroke, text_size) =
             (self.style.color, self.style.stroke, self.style.text_size);
@@ -182,6 +192,7 @@ impl App {
             }
             Outcome::Print(shot) => self.output.print(shot),
             Outcome::Search(shot) => self.output.search(shot),
+            Outcome::Pin { .. } => Ok(()),
         };
         if let Err(err) = result {
             log::error!("{err:#}");
@@ -192,6 +203,14 @@ impl App {
             | Outcome::Save(shot)
             | Outcome::Print(shot)
             | Outcome::Search(shot) => self.remember(&shot),
+            Outcome::Pin {
+                image,
+                position,
+                size,
+            } => {
+                self.remember(&image);
+                self.pin(event_loop, image, position, size);
+            }
         }
         if changed {
             self.save_settings();
@@ -199,7 +218,7 @@ impl App {
     }
 
     /// Copies recognized text and closes the overlay, or says in it why there is none.
-    fn recognized(&mut self, result: Result<String, ocr::Error>) {
+    fn recognized(&mut self, event_loop: &ActiveEventLoop, result: Result<String, ocr::Error>) {
         let status = match result {
             Ok(text) if !text.is_empty() => {
                 match self.output.copy_text(&text) {
@@ -207,7 +226,7 @@ impl App {
                     Err(err) => log::error!("{err:#}"),
                 }
                 if self.overlay.is_some() {
-                    self.finish_capture(Outcome::Cancel);
+                    self.finish_capture(event_loop, Outcome::Cancel);
                 }
                 return;
             }
@@ -323,9 +342,9 @@ impl App {
 
     fn run_command(&mut self, event_loop: &ActiveEventLoop, command: Command) {
         match command {
-            Command::Capture => self.start_capture(event_loop),
+            Command::Capture => self.start_capture(event_loop, None),
             Command::FullScreen => self.copy_full_screen(),
-            Command::RepeatArea => self.start_capture(event_loop),
+            Command::RepeatArea => self.start_capture(event_loop, self.last_area),
             Command::Delay(seconds) => self.capture_later(seconds),
             Command::History(index) => self.pin_from_history(event_loop, index),
             Command::ClearHistory => {
@@ -355,6 +374,7 @@ impl App {
         match Tray::new(&self.settings, version) {
             Ok(mut tray) => {
                 tray.set_history(self.history.entries());
+                tray.set_can_repeat(self.last_area.is_some());
                 self.tray = Some(tray);
             }
             Err(err) => log::error!("failed to create the tray icon: {err:#}"),
@@ -522,7 +542,7 @@ impl ApplicationHandler<UserEvent> for App {
                 );
             }
             if self.capture_now {
-                self.start_capture(event_loop);
+                self.start_capture(event_loop, None);
             }
             if self.settings_now {
                 self.open_settings(event_loop);
@@ -538,11 +558,11 @@ impl ApplicationHandler<UserEvent> for App {
                 if Some(event.id()) == self.capture_hotkey.map(|h| h.id())
                     && event.state() == HotKeyState::Pressed
                 {
-                    self.start_capture(event_loop);
+                    self.start_capture(event_loop, None);
                 }
             }
-            UserEvent::Capture => self.start_capture(event_loop),
-            UserEvent::Recognized(result) => self.recognized(result),
+            UserEvent::Capture => self.start_capture(event_loop, None),
+            UserEvent::Recognized(result) => self.recognized(event_loop, result),
             UserEvent::Settings => self.open_settings(event_loop),
             UserEvent::UpdateChecked(result, manual) => {
                 // The daily check stays quiet unless the user turned it off meanwhile.
@@ -589,7 +609,7 @@ impl ApplicationHandler<UserEvent> for App {
         }
     }
 
-    fn window_event(&mut self, _: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         if let Some(window) = &mut self.settings_window
             && window.id() == id
         {
@@ -621,7 +641,7 @@ impl ApplicationHandler<UserEvent> for App {
             }
         }
         if let Some(outcome) = outcome {
-            self.finish_capture(outcome);
+            self.finish_capture(event_loop, outcome);
         }
     }
 
@@ -645,7 +665,10 @@ fn centered(
         .primary_monitor()
         .or_else(|| event_loop.available_monitors().next())
     else {
-        return (PhysicalPosition::new(0, 0), PhysicalSize::new(width, height));
+        return (
+            PhysicalPosition::new(0, 0),
+            PhysicalSize::new(width, height),
+        );
     };
     let (origin, screen) = (monitor.position(), monitor.size());
     let fit = (0.9 * screen.width as f64 / width as f64)

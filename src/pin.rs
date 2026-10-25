@@ -275,7 +275,10 @@ mod tests {
     fn zoom_keeps_the_aspect_ratio_and_never_reaches_zero() {
         let base = PhysicalSize::new(400, 300);
         assert_eq!(zoomed(base, 1.5), PhysicalSize::new(600, 450));
-        assert_eq!(zoomed(PhysicalSize::new(3, 1), 0.1), PhysicalSize::new(1, 1));
+        assert_eq!(
+            zoomed(PhysicalSize::new(3, 1), 0.1),
+            PhysicalSize::new(1, 1)
+        );
     }
 
     #[test]
