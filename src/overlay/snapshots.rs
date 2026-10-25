@@ -58,10 +58,9 @@ fn shapes() -> Vec<Shape> {
     out
 }
 
-#[test]
-fn overlay_with_selection_shapes_and_toolbar() {
-    // The hovered button shows its tooltip.
-    let _lang = crate::snapshot::language(crate::i18n::Lang::En);
+/// The overlay with a selection, shapes and the toolbar, with or without the
+/// color palette open.
+fn overlay(palette: bool) -> RgbaImage {
     let sel = Rect {
         x: 80,
         y: 60,
@@ -82,9 +81,18 @@ fn overlay_with_selection_shapes_and_toolbar() {
         tool: Some(Tool::Arrow),
         color: PALETTE[1],
         hover: Some(Target::Button(Button::Copy)),
+        picking: false,
     };
-    Toolbar::layout(sel, W as i32, H as i32, 1.0, true).draw(&mut buf, W as i32, &look);
-    assert_matches("overlay", &from_0rgb(&buf, W, H));
+    Toolbar::layout(sel, W as i32, H as i32, 1.0, palette).draw(&mut buf, W as i32, &look);
+    from_0rgb(&buf, W, H)
+}
+
+#[test]
+fn overlay_with_selection_shapes_and_toolbar() {
+    // The hovered button shows its tooltip.
+    let _lang = crate::snapshot::language(crate::i18n::Lang::En);
+    assert_matches("overlay", &overlay(false));
+    assert_matches("overlay-palette", &overlay(true));
 }
 
 #[test]

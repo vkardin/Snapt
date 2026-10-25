@@ -9,7 +9,9 @@ use winit::{
 };
 
 use crate::{
-    capture, i18n, output,
+    capture,
+    i18n::{self, T, t},
+    ocr, output,
     overlay::{Outcome, Overlay, Style},
     platform,
     settings::{self, DEFAULT_HOTKEY, Settings},
@@ -34,6 +36,8 @@ pub enum UserEvent {
     /// The desktop portal answered a request for the capture shortcut.
     #[cfg(target_os = "linux")]
     PortalShortcut(String, Result<crate::portal::Shortcut, String>),
+    /// Text recognition on a selection finished.
+    Recognized(Result<String, ocr::Error>),
 }
 
 pub struct App {
@@ -260,6 +264,31 @@ impl App {
         }
     }
 
+    /// Copies recognized text and closes the overlay, or says in it why there is none.
+    fn recognized(&mut self, result: Result<String, ocr::Error>) {
+        let status = match result {
+            Ok(text) if !text.is_empty() => {
+                match self.output.copy_text(&text) {
+                    Ok(()) => log::info!("copied {} recognized characters", text.chars().count()),
+                    Err(err) => log::error!("{err:#}"),
+                }
+                if self.overlay.is_some() {
+                    self.finish_capture(Outcome::Cancel);
+                }
+                return;
+            }
+            Ok(_) => t(T::NoText),
+            Err(ocr::Error::Missing) => t(platform::ocr_missing_hint()),
+            Err(ocr::Error::Failed(err)) => {
+                log::error!("text recognition failed: {err}");
+                t(T::RecognizeFailed)
+            }
+        };
+        if let Some(overlay) = &mut self.overlay {
+            overlay.set_status(Some(status.to_string()));
+        }
+    }
+
     fn run_command(&mut self, event_loop: &ActiveEventLoop, command: Command) {
         match command {
             Command::Capture => self.start_capture(event_loop),
@@ -465,6 +494,7 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::Capture => self.start_capture(event_loop),
             #[cfg(target_os = "linux")]
             UserEvent::PortalShortcut(hotkey, result) => self.portal_answered(hotkey, result),
+            UserEvent::Recognized(result) => self.recognized(result),
             UserEvent::Settings => self.open_settings(event_loop),
             UserEvent::UpdateChecked(result, manual) => {
                 // The daily check stays quiet unless the user turned it off meanwhile.
@@ -526,7 +556,19 @@ impl ApplicationHandler<UserEvent> for App {
         if !overlay.owns(id) {
             return;
         }
-        if let Some(outcome) = overlay.window_event(id, event) {
+        let outcome = overlay.window_event(id, event);
+        if let Some(image) = overlay.take_recognize() {
+            let proxy = self.proxy.clone();
+            std::thread::spawn(move || {
+                let _ = proxy.send_event(UserEvent::Recognized(ocr::recognize(&image)));
+            });
+        }
+        if let Some(text) = overlay.take_copied() {
+            if let Err(err) = self.output.copy_text(&text) {
+                log::error!("{err:#}");
+            }
+        }
+        if let Some(outcome) = outcome {
             self.finish_capture(outcome);
         }
     }
