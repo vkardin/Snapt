@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snapt: fast, open-source screenshot tool</title>
+<meta name="description" content="Snapt is a fast, lightweight, open-source screenshot tool for Windows, macOS and Linux. Press PrtSc, select an area, copy or save it. No accounts, no cloud.">
+<meta name="theme-color" content="#5B21B6">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="canonical" href="https://vkardin.github.io/snapt/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Snapt: fast, open-source screenshot tool">
+<meta property="og:description" content="Press PrtSc, select an area, copy or save it. Windows, macOS and Linux. No accounts, no cloud.">
+<meta property="og:url" content="https://vkardin.github.io/snapt/">
+<meta property="og:image" content="https://vkardin.github.io/snapt/social-preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-soft: #f6f4fe;
+  --text: #1c1530;
+  --muted: #5d5675;
+  --line: #e6e1f5;
+  --brand: #7c3aed;
+  --brand-strong: #5b21b6;
+  --card: #ffffff;
+  --hero-a: #1e1b4b;
+  --hero-b: #4c1d95;
+  --radius: 14px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f0c1d;
+    --bg-soft: #17132b;
+    --text: #ece9f7;
+    --muted: #a49dbd;
+    --line: #2a2445;
+    --brand: #a78bfa;
+    --brand-strong: #8b5cf6;
+    --card: #17132b;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--brand); }
+code, kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .9em; }
+kbd {
+  display: inline-block; padding: 1px 7px; border: 1px solid var(--line);
+  border-bottom-width: 2px; border-radius: 6px; background: var(--bg-soft); white-space: nowrap;
+}
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+
+/* Header */
+header.top {
+  position: sticky; top: 0; z-index: 10;
+  background: color-mix(in srgb, var(--hero-a) 85%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgb(255 255 255 / .08);
+}
+header.top .wrap { display: flex; align-items: center; gap: 24px; height: 60px; }
+.brand { display: flex; align-items: center; gap: 10px; color: #fff; text-decoration: none; font-weight: 800; font-size: 20px; letter-spacing: -.5px; }
+.brand img { width: 30px; height: 30px; }
+nav { margin-left: auto; display: flex; gap: 22px; }
+nav a { color: #ddd6fe; text-decoration: none; font-size: 15px; }
+nav a:hover { color: #fff; }
+@media (max-width: 640px) { nav a.opt { display: none; } }
+
+/* Hero */
+.hero {
+  color: #fff; overflow: hidden;
+  background:
+    linear-gradient(rgb(255 255 255 / .04) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(90deg, rgb(255 255 255 / .04) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(135deg, var(--hero-a), var(--hero-b));
+}
+.hero .wrap { display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; padding-top: 72px; padding-bottom: 84px; }
+@media (max-width: 880px) { .hero .wrap { grid-template-columns: 1fr; padding-top: 48px; } }
+.hero h1 { font-size: clamp(36px, 5.4vw, 58px); line-height: 1.08; letter-spacing: -1.5px; margin: 0 0 18px; }
+.hero h1 span { color: #c4b5fd; }
+.hero p.lead { font-size: 19px; color: #ddd6fe; margin: 0 0 30px; max-width: 34em; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.btn {
+  display: inline-flex; align-items: center; gap: 10px; padding: 13px 22px; border-radius: 12px;
+  font-weight: 650; text-decoration: none; font-size: 16px; transition: transform .12s, background .12s;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn svg { width: 20px; height: 20px; flex: none; }
+.btn-primary { background: #fff; color: var(--hero-b); box-shadow: 0 8px 28px rgb(0 0 0 / .25); }
+.btn-ghost { color: #fff; border: 1px solid rgb(255 255 255 / .28); }
+.btn-ghost:hover { background: rgb(255 255 255 / .08); }
+.hero small.meta { display: block; margin-top: 16px; color: #b8acdf; font-size: 14px; }
+.hero small.meta a { color: #ddd6fe; }
+
+/* Demo illustration */
+.demo { position: relative; aspect-ratio: 4 / 3; border-radius: 16px; background: #0b0918; box-shadow: 0 30px 70px rgb(0 0 0 / .45); border: 1px solid rgb(255 255 255 / .1); overflow: hidden; }
+.demo .bar { height: 30px; display: flex; gap: 7px; align-items: center; padding: 0 12px; background: #1a1630; }
+.demo .bar i { width: 11px; height: 11px; border-radius: 50%; background: #3b3458; }
+.demo .desk { position: absolute; inset: 30px 0 0; padding: 22px; display: grid; grid-template-columns: 1fr 1.4fr; gap: 16px; }
+.demo .desk div { border-radius: 8px; background: #1e1938; }
+.demo .desk .tall { grid-row: span 2; }
+.demo .stage { position: absolute; inset: 30px 0 0; }
+.demo .shade { position: absolute; inset: 0; background: rgb(0 0 0 / .5); clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 0, 30% 22%, 30% 82%, 78% 82%, 78% 22%, 30% 22%); }
+.demo .sel { position: absolute; left: 30%; top: 22%; width: 48%; height: 60%; border: 2px dashed #c4b5fd; border-radius: 4px; animation: grow 3.6s ease-in-out infinite alternate; }
+.demo .sel b { position: absolute; width: 10px; height: 10px; background: #fff; border: 2px solid #5b21b6; border-radius: 2px; }
+.demo .sel b:nth-child(1) { left: -6px; top: -6px; } .demo .sel b:nth-child(2) { right: -6px; top: -6px; }
+.demo .sel b:nth-child(3) { left: -6px; bottom: -6px; } .demo .sel b:nth-child(4) { right: -6px; bottom: -6px; }
+.demo .size { position: absolute; left: 0; top: -32px; background: #8b5cf6; color: #fff; font: 12px ui-monospace, Menlo, Consolas, monospace; padding: 3px 8px; border-radius: 6px; }
+.demo .arrow { position: absolute; left: 12%; top: 22%; width: 64%; height: 56%; }
+.demo .tools { position: absolute; right: -54px; top: 10%; width: 40px; padding: 10px 0; display: grid; gap: 12px; justify-items: center; background: #fff; border-radius: 10px; }
+.demo .tools span { width: 16px; height: 16px; border-radius: 4px; background: #6d28d9; }
+.demo .tools span:nth-child(1) { border-radius: 50%; }
+.demo .tools span:nth-child(3) { clip-path: polygon(0 100%, 100% 0, 70% 100%); }
+.demo .hint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); background: rgb(255 255 255 / .92); color: #2e1065; font-size: 13px; padding: 6px 12px; border-radius: 999px; white-space: nowrap; }
+/* Keys in the hint stay light in both themes */
+.demo .hint kbd { background: #ede9fe; border-color: #c4b5fd; color: #2e1065; }
+@keyframes grow { from { transform: scale(.94); } to { transform: scale(1); } }
+@media (max-width: 480px) { .demo .tools { display: none; } .demo .hint { font-size: 11px; } }
+@media (prefers-reduced-motion: reduce) { .demo .sel { animation: none; } .btn { transition: none; } }
+
+/* Sections */
+section { padding: 84px 0; }
+section.soft { background: var(--bg-soft); }
+h2 { font-size: clamp(28px, 3.6vw, 38px); letter-spacing: -.8px; line-height: 1.15; margin: 0 0 12px; }
+.sub { color: var(--muted); font-size: 18px; margin: 0 0 40px; max-width: 40em; }
+.grid { display: grid; gap: 18px; grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 880px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; }
+.card h3 { margin: 14px 0 6px; font-size: 18px; }
+.card p { margin: 0; color: var(--muted); }
+.ico { width: 42px; height: 42px; border-radius: 11px; display: grid; place-items: center; background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); }
+.ico svg { width: 22px; height: 22px; }
+.tag { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, #f59e0b 18%, transparent); color: #b45309; vertical-align: 2px; margin-left: 6px; }
+@media (prefers-color-scheme: dark) { .tag { color: #fbbf24; } }
+
+/* Steps and keys */
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; counter-reset: s; margin-bottom: 44px; }
+.step { position: relative; padding: 22px 22px 22px 70px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
+.step::before { counter-increment: s; content: counter(s); position: absolute; left: 20px; top: 20px; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--brand-strong); color: #fff; font-weight: 700; }
+.step h3 { margin: 0 0 4px; font-size: 17px; }
+.step p { margin: 0; color: var(--muted); }
+table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+th, td { text-align: left; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+tr:last-child td { border-bottom: 0; }
+th { background: var(--bg-soft); font-size: 14px; color: var(--muted); font-weight: 600; }
+.note { color: var(--muted); font-size: 14px; margin-top: 12px; }
+
+/* Downloads */
+.dl { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.os { display: flex; flex-direction: column; }
+.os.current { border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent); }
+.os header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.os header svg { width: 30px; height: 30px; color: var(--text); }
+.os header h3 { margin: 0; font-size: 20px; }
+.os header em { margin-left: auto; font-style: normal; font-size: 12px; font-weight: 600; color: var(--brand); }
+.os ul { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 8px; }
+.os li a { display: flex; justify-content: space-between; gap: 12px; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--line); text-decoration: none; color: var(--text); font-weight: 550; }
+.os li a:hover { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 7%, transparent); }
+.os li a span { color: var(--muted); font-weight: 400; font-size: 14px; white-space: nowrap; }
+.os p { margin: auto 0 0; color: var(--muted); font-size: 14px; }
+.release-line { margin: -24px 0 32px; color: var(--muted); }
+
+/* FAQ */
+details { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); padding: 0 20px; margin-bottom: 12px; }
+summary { cursor: pointer; font-weight: 600; padding: 16px 0; }
+details p { margin: 0 0 16px; color: var(--muted); }
+
+footer { padding: 36px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; }
+footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#"><img src="logo.svg" alt="">Snapt</a>
+    <nav>
+      <a class="opt" href="#features">Features</a>
+      <a class="opt" href="#how">How it works</a>
+      <a href="#download">Download</a>
+      <a href="https://github.com/vkardin/snapt">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <div>
+      <h1>Screenshots in <span>one keystroke</span>.</h1>
+      <p class="lead">Snapt is a fast, lightweight, open-source screenshot tool for Windows, macOS and Linux. Press PrtSc, select an area, copy or save it. No accounts, no cloud, a few megabytes on disk.</p>
+      <div class="cta">
+        <a class="btn btn-primary" id="hero-dl" href="#download">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
+          <span id="hero-dl-label">Download Snapt</span>
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/vkardin/snapt">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.76 2.69 1.25 3.34.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.04 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.58.23 2.75.11 3.04.74.8 1.19 1.83 1.19 3.08 0 4.41-2.7 5.38-5.26 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
+          Star on GitHub
+        </a>
+      </div>
+      <small class="meta" id="hero-meta">Free and open source under the MIT license.</small>
+    </div>
+
+    <div class="demo" role="img" aria-label="Snapt selecting an area of the screen, with an arrow drawn inside the selection">
+      <div class="bar"><i></i><i></i><i></i></div>
+      <div class="desk"><div class="tall"></div><div></div><div></div></div>
+      <div class="stage">
+      <div class="shade"></div>
+      <div class="sel">
+        <b></b><b></b><b></b><b></b>
+        <span class="size">1280 × 720</span>
+        <svg class="arrow" viewBox="0 0 100 60" fill="none" stroke="#f472b6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 54 70 10M54 11l16-1-5 15"/></svg>
+        <div class="tools"><span></span><span></span><span></span><span></span></div>
+      </div>
+      </div>
+      <div class="hint"><kbd>Ctrl</kbd>+<kbd>C</kbd> copy · <kbd>Ctrl</kbd>+<kbd>S</kbd> save</div>
+    </div>
+  </div>
+</div>
+
+<main>
+<section id="features">
+  <div class="wrap">
+    <h2>Everything you need, nothing you don't</h2>
+    <p class="sub">If you have used LightShot, you already know how Snapt works. It just stays out of your way, and keeps your screenshots on your machine.</p>
+    <div class="grid">
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg></div>
+        <h3>Instant</h3>
+        <p>A native Rust binary that starts in a blink and sits idle in the tray until you press PrtSc.</p>
+      </div>
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 2"/></svg></div>
+        <h3>Lightweight</h3>
+        <p>No Electron, no web view, no runtime to install. A few megabytes on disk and almost no memory.</p>
+      </div>
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div>
+        <h3>Private</h3>
+        <p>No accounts, no telemetry, no uploads. Your shots never leave your computer.</p>
+      </div>
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4"/></svg></div>
+        <h3>Precise selection</h3>
+        <p>Drag to select, then move or resize by the handles. Works on every monitor and on HiDPI screens.</p>
+      </div>
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></div>
+        <h3>Copy or save</h3>
+        <p>Send the area straight to the clipboard, or save it as PNG or JPEG wherever you like.</p>
+      </div>
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19 19 5M12 5h7v7"/></svg></div>
+        <h3>Annotate <span class="tag">Soon</span></h3>
+        <p>Arrows, lines, boxes, marker and text right on the selection, with colors and undo.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how" class="soft">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <p class="sub">Three steps, no windows to click through.</p>
+    <div class="steps">
+      <div class="step"><h3>Press PrtSc</h3><p>Or pick <b>Take screenshot</b> in the tray menu. The screen freezes.</p></div>
+      <div class="step"><h3>Select an area</h3><p>Drag with the mouse. Adjust it by the edges, or press <kbd>Ctrl</kbd>+<kbd>A</kbd> for the whole screen.</p></div>
+      <div class="step"><h3>Copy or save</h3><p>Press <kbd>Ctrl</kbd>+<kbd>C</kbd> and paste anywhere, or <kbd>Ctrl</kbd>+<kbd>S</kbd> to save a file.</p></div>
+    </div>
+    <table>
+      <thead><tr><th>Action</th><th>Shortcut</th></tr></thead>
+      <tbody>
+        <tr><td>Select an area</td><td>Drag with the left mouse button</td></tr>
+        <tr><td>Move or resize it</td><td>Drag inside the selection or by its handles</td></tr>
+        <tr><td>Select the whole screen</td><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td></tr>
+        <tr><td>Copy to clipboard</td><td><kbd>Ctrl</kbd>+<kbd>C</kbd>, <kbd>Enter</kbd> or double-click</td></tr>
+        <tr><td>Save to a file</td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td></tr>
+        <tr><td>Cancel</td><td><kbd>Esc</kbd> or right-click</td></tr>
+      </tbody>
+    </table>
+    <p class="note">On macOS, use <kbd>Cmd</kbd> instead of <kbd>Ctrl</kbd>.</p>
+  </div>
+</section>
+
+<section id="download">
+  <div class="wrap">
+    <h2>Download</h2>
+    <p class="sub">Free for everyone, forever. Pick the installer for your system.</p>
+    <p class="release-line" id="release-line">Files come from the <a href="https://github.com/vkardin/snapt/releases">latest release on GitHub</a>.</p>
+    <div class="dl">
+      <div class="card os" data-os="windows">
+        <header>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.1 10.4 4v7.2H3V5.1Zm8.4-1.3L21 2.4v8.8h-9.6V3.8ZM3 12.8h7.4V20L3 18.9v-6.1Zm8.4 0H21v8.8l-9.6-1.4v-7.4Z"/></svg>
+          <h3>Windows</h3><em hidden>Your system</em>
+        </header>
+        <ul>
+          <li><a data-asset="-setup\.exe$" href="https://github.com/vkardin/snapt/releases">Installer <span>.exe</span></a></li>
+          <li><a data-asset="\.msi$" href="https://github.com/vkardin/snapt/releases">MSI package <span>.msi</span></a></li>
+        </ul>
+        <p>Windows 10 and 11, 64-bit.</p>
+      </div>
+      <div class="card os" data-os="mac">
+        <header>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9a4.8 4.8 0 0 0-3.8-2c-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9a5 5 0 0 0-4.2 2.6c-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.4.8 1.4 0 2.3-1.3 3.1-2.5a11 11 0 0 0 1.4-2.9 4.5 4.5 0 0 1-2.6-4.1ZM13.8 5c.7-.9 1.2-2 1.1-3.2a4.8 4.8 0 0 0-3.1 1.6 4.5 4.5 0 0 0-1.1 3.1c1.2.1 2.3-.6 3.1-1.5Z"/></svg>
+          <h3>macOS</h3><em hidden>Your system</em>
+        </header>
+        <ul>
+          <li><a data-asset="_aarch64\.dmg$" href="https://github.com/vkardin/snapt/releases">Apple Silicon <span>M1 and newer</span></a></li>
+          <li><a data-asset="_x64\.dmg$" href="https://github.com/vkardin/snapt/releases">Intel <span>.dmg</span></a></li>
+        </ul>
+        <p>Not sure? Apple menu → About This Mac shows your chip.</p>
+      </div>
+      <div class="card os" data-os="linux">
+        <header>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c-2.2 0-3.6 1.8-3.6 4.4 0 1.4.2 2.4-.6 3.8-.9 1.5-2.6 3.6-2.6 6.2 0 .7.1 1.3.4 1.8-.8.5-1.6 1-1.6 1.7 0 1.1 2 1.3 3.2 1.6 1.1.3 1.7.5 2.4.5.8 0 1.3-.4 1.6-.9h2.6c.3.5.8.9 1.6.9.7 0 1.3-.2 2.4-.5 1.2-.3 3.2-.5 3.2-1.6 0-.7-.8-1.2-1.6-1.7.3-.5.4-1.1.4-1.8 0-2.6-1.7-4.7-2.6-6.2-.8-1.4-.6-2.4-.6-3.8C15.6 3.8 14.2 2 12 2Zm-1.5 3.8c.5 0 .8.6.8 1.2 0 .3-.1.5-.2.7l-.6-.2c.1-.1.1-.3.1-.5 0-.3-.1-.5-.3-.5s-.3.3-.3.5v.2l-.4-.1v-.3c0-.6.4-1 .9-1Zm3 0c.5 0 .9.4.9 1 0 .2 0 .3-.1.5l-.5-.1v-.3c0-.3-.1-.6-.3-.6s-.3.3-.3.6c0 .1 0 .2.1.3l-.6.2a1.4 1.4 0 0 1-.1-.5c0-.6.4-1.1.9-1.1Zm-1.5 2c.8 0 1.9.6 2 .9.1.3-.3.5-.8.8-.5.3-.9.6-1.2.6-.3 0-.7-.3-1.2-.6-.5-.3-.9-.5-.8-.8.1-.3 1.2-.9 2-.9Z"/></svg>
+          <h3>Linux</h3><em hidden>Your system</em>
+        </header>
+        <ul>
+          <li><a data-asset="_amd64\.deb$" href="https://github.com/vkardin/snapt/releases">Debian and Ubuntu <span>.deb</span></a></li>
+          <li><a data-asset="\.AppImage$" href="https://github.com/vkardin/snapt/releases">Any distribution <span>AppImage</span></a></li>
+        </ul>
+        <p>x86_64. The PrtSc hotkey works on X11 for now.</p>
+      </div>
+    </div>
+    <p class="note">Checksums are in <code>SHA256SUMS.txt</code> on the <a href="https://github.com/vkardin/snapt/releases">release page</a>. Prefer to build it yourself? See <a href="https://github.com/vkardin/snapt#building-from-source">building from source</a>.</p>
+  </div>
+</section>
+
+<section id="faq" class="soft">
+  <div class="wrap">
+    <h2>Questions</h2>
+    <p class="sub">The short answers. Anything else, ask in <a href="https://github.com/vkardin/snapt/issues">Issues</a>.</p>
+    <details>
+      <summary>Windows or macOS warns me when I open Snapt</summary>
+      <p>Snapt is not code-signed yet. On Windows, click <b>More info</b>, then <b>Run anyway</b>. On macOS, try to open it once, then go to <b>System Settings → Privacy &amp; Security</b> and click <b>Open Anyway</b>. If macOS says the app is damaged, run <code>xattr -dr com.apple.quarantine /Applications/Snapt.app</code> in Terminal.</p>
+    </details>
+    <details>
+      <summary>macOS asks for Screen Recording permission</summary>
+      <p>That is how macOS lets apps see the screen. Allow Snapt in <b>System Settings → Privacy &amp; Security → Screen Recording</b>, then restart it.</p>
+    </details>
+    <details>
+      <summary>I don't see the tray icon on Linux</summary>
+      <p>Snapt uses the StatusNotifierItem protocol. KDE supports it out of the box. On GNOME, install the AppIndicator extension.</p>
+    </details>
+    <details>
+      <summary>Does Snapt upload my screenshots?</summary>
+      <p>No. Snapt has no servers and makes no network requests. Everything stays on your computer.</p>
+    </details>
+    <details>
+      <summary>Is it really free?</summary>
+      <p>Yes. Snapt is open source under the MIT license, with no ads, no paid tier and no tracking.</p>
+    </details>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© vkardin · <a href="https://github.com/vkardin/snapt/blob/main/LICENSE">MIT license</a></span>
+    <span><a href="https://github.com/vkardin/snapt">Source</a> · <a href="https://github.com/vkardin/snapt/releases">Releases</a> · <a href="https://github.com/vkardin/snapt/issues">Report a bug</a></span>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const ua = navigator.userAgent;
+  const os = /Windows/i.test(ua) ? 'windows' : /Mac/i.test(ua) && !/iPhone|iPad/i.test(ua) ? 'mac' : /Linux/i.test(ua) && !/Android/i.test(ua) ? 'linux' : null;
+  const names = { windows: 'Windows', mac: 'macOS', linux: 'Linux' };
+  const primary = { windows: '-setup\\.exe$', mac: '_aarch64\\.dmg$', linux: '\\.AppImage$' };
+
+  if (os) {
+    const card = document.querySelector(`.os[data-os="${os}"]`);
+    card.classList.add('current');
+    card.querySelector('em').hidden = false;
+    card.parentNode.prepend(card);
+    document.getElementById('hero-dl-label').textContent = `Download for ${names[os]}`;
+  }
+
+  // The newest published release, prereleases included, so the buttons work before 1.0.
+  fetch('https://api.github.com/repos/vkardin/snapt/releases?per_page=5')
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(list => {
+      const rel = list.find(r => !r.draft);
+      if (!rel) return;
+      const find = re => rel.assets.find(a => new RegExp(re).test(a.name));
+      document.querySelectorAll('a[data-asset]').forEach(a => {
+        const asset = find(a.dataset.asset);
+        if (asset) a.href = asset.browser_download_url;
+      });
+      const date = new Date(rel.published_at).toLocaleDateString('en', { year: 'numeric', month: 'long', day: 'numeric' });
+      const kind = rel.prerelease ? ' (preview)' : '';
+      document.getElementById('release-line').innerHTML =
+        `Latest version: <a href="${rel.html_url}">${rel.tag_name}</a>${kind}, released ${date}.`;
+      document.getElementById('hero-meta').innerHTML =
+        `${rel.tag_name}${kind} · Free and open source under the MIT license.`;
+      const main = os && find(primary[os]);
+      if (main) document.getElementById('hero-dl').href = main.browser_download_url;
+    })
+    .catch(() => {});
+})();
+</script>
+</body>
+</html>

@@ -7,9 +7,14 @@
 Press PrtSc, select an area, add an arrow or a caption, then copy it or save it.<br>
 No accounts, no cloud, a few megabytes on disk.
 
+**[Website](https://vkardin.github.io/snapt/) · [Download](https://vkardin.github.io/snapt/#download) · [Report a bug](https://github.com/vkardin/snapt/issues)**
+
 [![CI](https://github.com/vkardin/snapt/actions/workflows/ci.yml/badge.svg)](https://github.com/vkardin/snapt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-8B5CF6.svg)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-5B21B6.svg)
+[![Release](https://img.shields.io/github/v/release/vkardin/snapt?include_prereleases&color=7C3AED)](https://github.com/vkardin/snapt/releases)
+[![Downloads](https://img.shields.io/github/downloads/vkardin/snapt/total?color=7C3AED)](https://github.com/vkardin/snapt/releases)
+![Rust](https://img.shields.io/badge/made%20with-Rust-B7410E.svg)
 
 </div>
 
@@ -39,6 +44,7 @@ No accounts, no cloud, a few megabytes on disk.
 ## Install
 
 Download the installer for your system from the
+[website](https://vkardin.github.io/snapt/#download) or the
 [latest release](https://github.com/vkardin/snapt/releases):
 `.exe` or `.msi` for Windows, `.dmg` for macOS, `.deb` or AppImage for Linux.
 
