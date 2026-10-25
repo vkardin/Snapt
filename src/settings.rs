@@ -56,16 +56,18 @@ pub enum Feature {
     Print,
     Pin,
     Scroll,
+    Record,
     Picker,
 }
 
 impl Feature {
-    pub const ALL: [Feature; 6] = [
+    pub const ALL: [Feature; 7] = [
         Feature::Recognize,
         Feature::Search,
         Feature::Print,
         Feature::Pin,
         Feature::Scroll,
+        Feature::Record,
         Feature::Picker,
     ];
 
@@ -76,6 +78,7 @@ impl Feature {
             Feature::Print => "print",
             Feature::Pin => "pin",
             Feature::Scroll => "scroll",
+            Feature::Record => "record",
             Feature::Picker => "picker",
         }
     }
@@ -104,6 +107,7 @@ pub enum Shortcut {
     RepeatArea,
     Recognize,
     Scroll,
+    Record,
     Pin,
     Copy,
     Save,
@@ -123,13 +127,14 @@ macro_rules! cmd {
 }
 
 impl Shortcut {
-    pub const ALL: [Shortcut; 9] = [
+    pub const ALL: [Shortcut; 10] = [
         Shortcut::Capture,
         Shortcut::Pick,
         Shortcut::FullScreen,
         Shortcut::RepeatArea,
         Shortcut::Recognize,
         Shortcut::Scroll,
+        Shortcut::Record,
         Shortcut::Pin,
         Shortcut::Copy,
         Shortcut::Save,
@@ -151,6 +156,7 @@ impl Shortcut {
             Shortcut::FullScreen | Shortcut::RepeatArea => "",
             Shortcut::Recognize => cmd!("Shift+C"),
             Shortcut::Scroll => cmd!("Shift+S"),
+            Shortcut::Record => cmd!("Shift+R"),
             Shortcut::Pin => "F3",
             Shortcut::Copy => cmd!("C"),
             Shortcut::Save => cmd!("S"),
@@ -166,6 +172,7 @@ impl Shortcut {
             Shortcut::RepeatArea => "repeat_area_hotkey",
             Shortcut::Recognize => "copy_text_key",
             Shortcut::Scroll => "scroll_key",
+            Shortcut::Record => "record_key",
             Shortcut::Pin => "pin_key",
             Shortcut::Copy => "copy_key",
             Shortcut::Save => "save_key",
@@ -192,7 +199,7 @@ pub fn overlay_shortcut(
 pub struct Settings {
     /// The keys of each `Shortcut`, as `global_hotkey` parses them, e.g.
     /// `Ctrl+Shift+S`; empty for none.
-    pub shortcuts: [String; 9],
+    pub shortcuts: [String; 10],
     pub color_format: ColorFormat,
     pub folder: PathBuf,
     pub format: Format,
@@ -405,7 +412,10 @@ impl Settings {
         );
         let _ = writeln!(t, "file_name = {}", self.file_name);
         let disabled: Vec<&str> = self.disabled.iter().map(|f| f.code()).collect();
-        let _ = writeln!(t, "# turned off: ocr, search, print, pin, scroll, picker");
+        let _ = writeln!(
+            t,
+            "# turned off: ocr, search, print, pin, scroll, record, picker"
+        );
         let _ = writeln!(t, "disabled = {}", disabled.join(", "));
         t
     }

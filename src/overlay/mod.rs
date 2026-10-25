@@ -595,7 +595,12 @@ impl Overlay {
                     self.start_recognize(image);
                     None
                 }
-                Shortcut::Scroll if on(Feature::Scroll) => screen.scroll(),
+                Shortcut::Scroll if on(Feature::Scroll) => {
+                    screen.scroll(crate::scroll::Mode::Scroll)
+                }
+                Shortcut::Record if on(Feature::Record) => {
+                    screen.scroll(crate::scroll::Mode::Record)
+                }
                 Shortcut::Pin if on(Feature::Pin) => screen.pin(),
                 Shortcut::Copy => Some(Outcome::Copy(screen.output_or_all())),
                 Shortcut::Save => Some(Outcome::Save(screen.output_or_all())),
@@ -607,17 +612,6 @@ impl Overlay {
             KeyCode::KeyF if command && on(Feature::Search) => {
                 Some(Outcome::Search(screen.output_or_all()))
             }
-            KeyCode::KeyC if command => Some(Outcome::Copy(screen.output_or_all())),
-            KeyCode::KeyS if command && self.modifiers.shift_key() => {
-                screen.scroll(crate::scroll::Mode::Scroll)
-            }
-            KeyCode::KeyR if command && self.modifiers.shift_key() => {
-                screen.scroll(crate::scroll::Mode::Record)
-            }
-            KeyCode::KeyS if command => Some(Outcome::Save(screen.output_or_all())),
-            KeyCode::KeyP if command => Some(Outcome::Print(screen.output_or_all())),
-            KeyCode::KeyF if command => Some(Outcome::Search(screen.output_or_all())),
-            KeyCode::F3 => screen.pin(),
             KeyCode::KeyA if command => {
                 screen.commit_text();
                 screen.selection.select_all();

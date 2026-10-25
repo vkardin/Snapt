@@ -55,12 +55,12 @@ fn actions() -> Vec<Button> {
             Button::Print => enabled(Feature::Print),
             Button::Pin => enabled(Feature::Pin),
             Button::Scroll => enabled(Feature::Scroll),
+            Button::Record => enabled(Feature::Record),
             _ => true,
         })
         .collect()
 }
 
-const ACTIONS: [Button; 7] = [
 const ACTIONS: [Button; 8] = [
     Button::Recognize,
     Button::Search,

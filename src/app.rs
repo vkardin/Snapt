@@ -19,8 +19,7 @@ use crate::{
     pin::{Pin, PinAction},
     platform,
     scroll::{Finished, Scroll, ScrollAction},
-    settings::{self, Settings, Shortcut},
- main
+    settings::{self, Feature, Settings, Shortcut},
     settings_window::{Action, Notice, SettingsWindow, UpdateStatus},
     tray::{Command, Tray},
     updater::{self, Update},
@@ -61,7 +60,7 @@ pub struct App {
     // The manager unregisters its hotkeys when dropped, so it must live as long as the app.
     hotkeys: GlobalHotKeyManager,
     /// The registered shortcuts, by [`Shortcut`].
-    registered: [Option<HotKey>; 9],
+    registered: [Option<HotKey>; 10],
     tray: Option<Tray>,
     overlay: Option<Overlay>,
     pins: Vec<Pin>,
@@ -98,7 +97,7 @@ impl App {
         };
         let mut app = Self {
             hotkeys,
-            registered: [None; 9],
+            registered: [None; 10],
             tray: None,
             overlay: None,
             pins: Vec::new(),
