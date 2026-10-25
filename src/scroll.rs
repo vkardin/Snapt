@@ -1,9 +1,9 @@
-//! Scrolling screenshots (experimental).
+//! Scrolling screenshots (experimental), and the panel that also runs recordings.
 //!
 //! The user scrolls the page by hand while Snapt captures the selected area
 //! a few times a second and glues the new rows of each frame onto the image.
-//! A small panel next to the area shows the height so far: Enter or a click
-//! finishes, Esc cancels.
+//! A small panel next to the area shows the height so far (or, when
+//! recording, the time): Enter or a click finishes, Esc cancels.
 
 use std::{
     hash::{DefaultHasher, Hash, Hasher},
@@ -51,6 +51,24 @@ pub struct Region {
     pub h: u32,
 }
 
+/// What the panel runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    Scroll,
+    Record,
+}
+
+/// What a finished capture produced.
+pub enum Finished {
+    Image(RgbaImage),
+    Video(crate::record::Video),
+}
+
+enum Worker {
+    Scroll(JoinHandle<Option<RgbaImage>>),
+    Record(JoinHandle<Option<crate::record::Video>>),
+}
+
 /// What the user decided in the panel.
 pub enum ScrollAction {
     Done,
@@ -64,8 +82,10 @@ pub struct Scroll {
     window: Rc<Window>,
     _context: softbuffer::Context<OwnedDisplayHandle>,
     stop: Arc<AtomicBool>,
+    /// The height so far, or the seconds recorded.
     height: Arc<AtomicU32>,
-    worker: Option<JoinHandle<Option<RgbaImage>>>,
+    mode: Mode,
+    worker: Option<Worker>,
 }
 
 impl Scroll {
@@ -76,6 +96,7 @@ impl Scroll {
         proxy: EventLoopProxy<UserEvent>,
         region: Region,
         panel: PhysicalPosition<i32>,
+        mode: Mode,
     ) -> Result<Self> {
         let context = softbuffer::Context::new(event_loop.owned_display_handle())
             .map_err(|e| anyhow::anyhow!("failed to start the renderer: {e}"))?;
@@ -99,10 +120,20 @@ impl Scroll {
         let surface = Surface::new(&context, window.clone())
             .map_err(|e| anyhow::anyhow!("failed to create a drawing surface: {e}"))?;
         let stop = Arc::new(AtomicBool::new(false));
-        let height = Arc::new(AtomicU32::new(region.h));
+        let height = Arc::new(AtomicU32::new(match mode {
+            Mode::Scroll => region.h,
+            Mode::Record => 0,
+        }));
         let worker = {
             let (stop, height) = (stop.clone(), height.clone());
-            std::thread::spawn(move || capture_loop(region, &stop, &height, &proxy))
+            match mode {
+                Mode::Scroll => Worker::Scroll(std::thread::spawn(move || {
+                    capture_loop(region, &stop, &height, &proxy)
+                })),
+                Mode::Record => Worker::Record(std::thread::spawn(move || {
+                    crate::record::capture_loop(region, &stop, &height, &proxy)
+                })),
+            }
         };
         let mut scroll = Self {
             surface,
@@ -110,6 +141,7 @@ impl Scroll {
             _context: context,
             stop,
             height,
+            mode,
             worker: Some(worker),
         };
         scroll.redraw();
@@ -148,10 +180,13 @@ impl Scroll {
         self.window.request_redraw();
     }
 
-    /// Stops capturing and returns the glued image.
-    pub fn finish(mut self) -> Option<RgbaImage> {
+    /// Stops capturing and returns the glued image or the recording.
+    pub fn finish(mut self) -> Option<Finished> {
         self.stop.store(true, Ordering::Relaxed);
-        self.worker.take()?.join().ok().flatten()
+        match self.worker.take()? {
+            Worker::Scroll(w) => w.join().ok().flatten().map(Finished::Image),
+            Worker::Record(w) => w.join().ok().flatten().map(Finished::Video),
+        }
     }
 
     fn redraw(&mut self) {
@@ -174,9 +209,17 @@ impl Scroll {
             1.0,
         );
         let height = self.height.load(Ordering::Relaxed);
+        let (hint, status) = match self.mode {
+            Mode::Scroll => (T::ScrollHint, T::ScrollHeight),
+            Mode::Record => (T::RecordHint, T::RecordTime),
+        };
+        let status = match self.mode {
+            Mode::Scroll => t(status).replace("{}", &height.to_string()),
+            Mode::Record => t(status).replace("{}", &format!("{}:{:02}", height / 60, height % 60)),
+        };
         font::draw(
             &mut pixmap,
-            t(T::ScrollHint),
+            t(hint),
             12.0 * s,
             9.0 * s,
             13.0 * s,
@@ -185,7 +228,7 @@ impl Scroll {
         );
         font::draw(
             &mut pixmap,
-            &t(T::ScrollHeight).replace("{}", &height.to_string()),
+            &status,
             12.0 * s,
             30.0 * s,
             12.0 * s,
@@ -256,7 +299,7 @@ fn capture_loop(
     stitcher.map(Stitcher::finish)
 }
 
-fn find_monitor((x, y): (i32, i32)) -> Result<xcap::Monitor> {
+pub fn find_monitor((x, y): (i32, i32)) -> Result<xcap::Monitor> {
     xcap::Monitor::all()
         .context("failed to list monitors")?
         .into_iter()

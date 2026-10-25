@@ -52,11 +52,12 @@ pub enum Outcome {
         position: PhysicalPosition<i32>,
         size: PhysicalSize<u32>,
     },
-    /// Capture the area while the user scrolls it.
+    /// Capture the area while the user scrolls it, or record it.
     Scroll {
         region: crate::scroll::Region,
         /// Where the scrolling panel goes, outside the area (physical pixels).
         panel: PhysicalPosition<i32>,
+        mode: crate::scroll::Mode,
     },
     Cancel,
 }
@@ -488,7 +489,8 @@ impl Overlay {
             Target::Button(Button::Search) => return screen.output().map(Outcome::Search),
             Target::Button(Button::Print) => return screen.output().map(Outcome::Print),
             Target::Button(Button::Pin) => return screen.pin(),
-            Target::Button(Button::Scroll) => return screen.scroll(),
+            Target::Button(Button::Scroll) => return screen.scroll(crate::scroll::Mode::Scroll),
+            Target::Button(Button::Record) => return screen.scroll(crate::scroll::Mode::Record),
             Target::Button(Button::Copy) => return screen.output().map(Outcome::Copy),
             Target::Button(Button::Save) => return screen.output().map(Outcome::Save),
         }
@@ -605,6 +607,17 @@ impl Overlay {
             KeyCode::KeyF if command && on(Feature::Search) => {
                 Some(Outcome::Search(screen.output_or_all()))
             }
+            KeyCode::KeyC if command => Some(Outcome::Copy(screen.output_or_all())),
+            KeyCode::KeyS if command && self.modifiers.shift_key() => {
+                screen.scroll(crate::scroll::Mode::Scroll)
+            }
+            KeyCode::KeyR if command && self.modifiers.shift_key() => {
+                screen.scroll(crate::scroll::Mode::Record)
+            }
+            KeyCode::KeyS if command => Some(Outcome::Save(screen.output_or_all())),
+            KeyCode::KeyP if command => Some(Outcome::Print(screen.output_or_all())),
+            KeyCode::KeyF if command => Some(Outcome::Search(screen.output_or_all())),
+            KeyCode::F3 => screen.pin(),
             KeyCode::KeyA if command => {
                 screen.commit_text();
                 screen.selection.select_all();
@@ -1072,9 +1085,9 @@ impl Screen {
         self.output().unwrap_or_else(|| self.image.clone())
     }
 
-    /// Starts a scrolling screenshot of the selection, with the panel below
-    /// it, or above when there is no room below.
-    fn scroll(&mut self) -> Option<Outcome> {
+    /// Starts a scrolling screenshot or a recording of the selection, with
+    /// the panel below it, or above when there is no room below.
+    fn scroll(&mut self, mode: crate::scroll::Mode) -> Option<Outcome> {
         let rect = self.selection.rect()?;
         let (x, y, w, h) = self.to_image(rect)?;
         let gap = (8.0 * self.window.scale_factor()) as i32;
@@ -1094,6 +1107,7 @@ impl Screen {
                 h,
             },
             panel: PhysicalPosition::new(self.origin.x + rect.x, self.origin.y + top),
+            mode,
         })
     }
 
