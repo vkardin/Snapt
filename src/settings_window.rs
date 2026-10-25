@@ -23,7 +23,7 @@ use crate::{
     icon,
     paint::{fill_round, rgb},
     platform,
-    settings::{ColorFormat, Format, Settings, Shortcut},
+    settings::{ColorFormat, Feature, Format, Settings, Shortcut},
     tray::hotkey_label,
 };
 
@@ -38,6 +38,7 @@ pub enum Action {
     Hotkey(Shortcut, String),
     ResetHotkey(Shortcut),
     ColorFormat(ColorFormat),
+    Feature(Feature),
     ChangeFolder,
     OpenFolder,
     Format(Format),
@@ -47,6 +48,14 @@ pub enum Action {
     InstallUpdate,
     Website,
     Close,
+}
+
+/// The pages of the window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tab {
+    General,
+    Shortcuts,
+    Features,
 }
 
 /// Where the update check stands, shown under the update switch.
@@ -68,6 +77,8 @@ enum Id {
     Hotkey(Shortcut),
     ResetHotkey(Shortcut),
     ColorFormat(ColorFormat),
+    Feature(Feature),
+    Tab(Tab),
     ChangeFolder,
     OpenFolder,
     Format(Format),
@@ -88,7 +99,7 @@ pub enum Notice {
 }
 
 const WIDTH: f64 = 400.0;
-const HEIGHT: f64 = 520.0;
+const HEIGHT: f64 = 540.0;
 const MARGIN: f32 = 20.0;
 /// The height of one settings row, and of the controls in it.
 const ROW: f32 = 40.0;
@@ -117,6 +128,7 @@ pub struct SettingsWindow {
     /// The shortcut field listening for keys.
     recording: Option<Shortcut>,
     menu_open: bool,
+    tab: Tab,
     pub notice: Option<Notice>,
     hits: Vec<(Id, SkRect)>,
 }
@@ -149,6 +161,7 @@ impl SettingsWindow {
             modifiers: ModifiersState::empty(),
             recording: None,
             menu_open: false,
+            tab: Tab::General,
             notice: None,
             hits: Vec::new(),
         })
@@ -275,6 +288,14 @@ impl SettingsWindow {
                 Action::ResetHotkey(which)
             }
             Id::ColorFormat(f) => Action::ColorFormat(f),
+            Id::Feature(f) => Action::Feature(f),
+            Id::Tab(tab) => {
+                self.tab = tab;
+                if self.recording.take().is_some() {
+                    return Some(Action::Recording(false));
+                }
+                return None;
+            }
             Id::ChangeFolder => Action::ChangeFolder,
             Id::OpenFolder => Action::OpenFolder,
             Id::Format(f) => Action::Format(f),
@@ -327,6 +348,11 @@ impl SettingsWindow {
         }
         self.recording = None;
         self.window.request_redraw();
+        // Backspace or Delete alone clears the shortcut; capture always keeps one.
+        let clear = matches!(code, KeyCode::Backspace | KeyCode::Delete);
+        if clear && self.modifiers.is_empty() && which != Shortcut::Capture {
+            return Some(Action::Hotkey(which, String::new()));
+        }
         match hotkey_from(self.modifiers, code) {
             Some(hotkey) => Some(Action::Hotkey(which, hotkey)),
             None => {
@@ -364,6 +390,7 @@ impl SettingsWindow {
             &mut ui,
             settings,
             update,
+            self.tab,
             self.recording,
             self.notice,
             self.menu_open,
@@ -437,116 +464,52 @@ fn build(
     ui: &mut Ui,
     settings: &Settings,
     update: &UpdateStatus,
+    tab: Tab,
     recording: Option<Shortcut>,
     notice: Option<Notice>,
     menu_open: bool,
 ) {
     let left = MARGIN;
     let right = WIDTH as f32 - MARGIN;
-    let mut y = 10.0;
+    let mut y = 12.0;
 
-    // Language, start at login, updates
-    ui.label(t(T::Language), left, y + 12.0, 13.0, TEXT);
-    let lang_name = match settings.language {
-        Some(lang) => lang.name(),
-        None => t(T::SystemLanguage),
-    };
-    let menu_x = right - MENU_W;
-    let menu_y = y + 6.0;
-    ui.select(Id::LangMenu, lang_name, menu_x, menu_y, MENU_W, menu_open);
-    y += ROW;
-    ui.switch(Id::Autostart, t(T::StartAtLogin), y, settings.autostart);
-    y += ROW;
-    ui.switch(Id::AutoUpdate, t(T::AutoUpdate), y, settings.auto_update);
-    y += ROW;
+    // The page tabs
+    let tabs = [
+        (Tab::General, t(T::General)),
+        (Tab::Shortcuts, t(T::Shortcuts)),
+        (Tab::Features, t(T::Features)),
+    ];
+    let seg_w = (right - left) / tabs.len() as f32;
+    for (i, (id, name)) in tabs.iter().enumerate() {
+        let x = left + i as f32 * seg_w;
+        let last = i == tabs.len() - 1;
+        ui.segment(Id::Tab(*id), name, x, y, seg_w, tab == *id, i == 0, last);
+    }
+    y += H + 6.0;
     y = ui.divider(y);
 
-    // Shortcuts, the color format and system takeover
-    for (which, label) in [
-        (Shortcut::Capture, t(T::Shortcut)),
-        (Shortcut::Pick, t(T::PickColor)),
-    ] {
-        ui.label(label, left, y + 12.0, 13.0, TEXT);
-        let active = recording == Some(which);
-        let keys = settings.shortcut(which);
-        let field = if active {
-            t(T::PressShortcut).to_string()
-        } else {
-            hotkey_label(keys)
-        };
-        let field_w = 150.0;
-        let id = Id::Hotkey(which);
-        ui.field(id, &field, right - field_w, y + 6.0, field_w, active);
-        if keys != which.default_keys() && !active {
-            let w = font::measure(t(T::Reset), 12.0).0;
-            let x = right - field_w - 12.0 - w;
-            ui.link(Id::ResetHotkey(which), t(T::Reset), x, y + 13.0, 12.0);
+    let (menu_x, menu_y) = (right - MENU_W, y + 6.0);
+    let menu_open = menu_open && tab == Tab::General;
+    match tab {
+        Tab::General => y = general(ui, settings, notice, menu_open, y),
+        Tab::Shortcuts => y = shortcuts(ui, settings, recording, notice, y),
+        Tab::Features => {
+            for (feature, name) in [
+                (Feature::Recognize, t(T::Recognize)),
+                (Feature::Scroll, t(T::Scroll)),
+                (Feature::Pin, t(T::Pin)),
+                (Feature::Search, t(T::Search)),
+                (Feature::Print, t(T::Print)),
+                (Feature::Picker, t(T::PickColor)),
+            ] {
+                let on = settings.is_enabled(feature);
+                ui.switch(Id::Feature(feature), name, y, on);
+                y += ROW;
+            }
         }
-        y += ROW;
     }
-    ui.label(t(T::ColorFormat), left, y + 12.0, 13.0, TEXT);
-    let seg_w = 60.0;
-    let mut x = right - 2.0 * seg_w;
-    for (i, (name, format)) in [("HEX", ColorFormat::Hex), ("RGB", ColorFormat::Rgb)]
-        .iter()
-        .enumerate()
-    {
-        let selected = settings.color_format == *format;
-        let id = Id::ColorFormat(*format);
-        ui.segment(id, name, x, y + 6.0, seg_w, selected, i == 0, i == 1);
-        x += seg_w;
-    }
-    y += ROW;
-    ui.switch(
-        Id::ReplaceSystem,
-        t(T::ReplaceSystem),
-        y,
-        settings.replace_system,
-    );
-    y += ROW - 4.0;
-    let (hint, color) = match notice {
-        Some(Notice::ShortcutTaken) => (t(T::ShortcutTaken), ERROR),
-        Some(Notice::ShortcutInvalid) => (t(T::ShortcutInvalid), ERROR),
-        Some(Notice::ReplaceFailed) => (t(T::ReplaceFailed), ERROR),
-        None => (t(platform::replace_system_hint()), MUTED),
-    };
-    ui.wrapped(hint, left, y, right - left, 12.0, color);
-    y += 34.0;
-    y = ui.divider(y);
-
-    // Saving
-    ui.label(t(T::Folder), left, y + 12.0, 13.0, TEXT);
-    let open_w = font::measure(t(T::Open), 12.0).0 + 20.0;
-    let path_w = 210.0;
-    let path_x = right - open_w - 6.0 - path_w;
-    let path = elide_start(&settings.folder.display().to_string(), 12.0, path_w - 20.0);
-    ui.field_left(Id::ChangeFolder, &path, path_x, y + 6.0, path_w);
-    ui.button(Id::OpenFolder, t(T::Open), right - open_w, y + 6.0, false);
-    y += ROW;
-    ui.label(t(T::Format), left, y + 12.0, 13.0, TEXT);
-    let seg_w = 60.0;
-    let mut x = right - 2.0 * seg_w;
-    for (i, (name, format)) in [("PNG", Format::Png), ("JPEG", Format::Jpeg)]
-        .iter()
-        .enumerate()
-    {
-        let selected = settings.format == *format;
-        ui.segment(
-            Id::Format(*format),
-            name,
-            x,
-            y + 6.0,
-            seg_w,
-            selected,
-            i == 0,
-            i == 1,
-        );
-        x += seg_w;
-    }
-    y += ROW;
-    ui.switch(Id::QuickSave, t(T::QuickSave), y, settings.quick_save);
-    y += ROW;
-    y = ui.divider(y);
+    debug_assert!(y <= HEIGHT as f32 - 52.0, "the page runs into the footer");
+    let y = ui.divider(HEIGHT as f32 - 53.0);
 
     // Footer: version, update status and links
     let (status, color) = match update {
@@ -608,6 +571,151 @@ fn build(
         // Anywhere else closes the list.
         ui.hits.append(&mut hits);
     }
+}
+
+/// The general page; returns where it ends.
+fn general(
+    ui: &mut Ui,
+    settings: &Settings,
+    notice: Option<Notice>,
+    menu_open: bool,
+    mut y: f32,
+) -> f32 {
+    let left = MARGIN;
+    let right = WIDTH as f32 - MARGIN;
+    // Language, start at login, updates
+    ui.label(t(T::Language), left, y + 12.0, 13.0, TEXT);
+    let lang_name = match settings.language {
+        Some(lang) => lang.name(),
+        None => t(T::SystemLanguage),
+    };
+    let menu_x = right - MENU_W;
+    let menu_y = y + 6.0;
+    ui.select(Id::LangMenu, lang_name, menu_x, menu_y, MENU_W, menu_open);
+    y += ROW;
+    ui.switch(Id::Autostart, t(T::StartAtLogin), y, settings.autostart);
+    y += ROW;
+    ui.switch(Id::AutoUpdate, t(T::AutoUpdate), y, settings.auto_update);
+    y += ROW;
+    y = ui.divider(y);
+
+    ui.label(t(T::ColorFormat), left, y + 12.0, 13.0, TEXT);
+    let seg_w = 60.0;
+    let mut x = right - 2.0 * seg_w;
+    for (i, (name, format)) in [("HEX", ColorFormat::Hex), ("RGB", ColorFormat::Rgb)]
+        .iter()
+        .enumerate()
+    {
+        let selected = settings.color_format == *format;
+        let id = Id::ColorFormat(*format);
+        ui.segment(id, name, x, y + 6.0, seg_w, selected, i == 0, i == 1);
+        x += seg_w;
+    }
+    y += ROW;
+    ui.switch(
+        Id::ReplaceSystem,
+        t(T::ReplaceSystem),
+        y,
+        settings.replace_system,
+    );
+    y += ROW - 4.0;
+    let (hint, color) = match notice {
+        Some(Notice::ReplaceFailed) => (t(T::ReplaceFailed), ERROR),
+        _ => (t(platform::replace_system_hint()), MUTED),
+    };
+    ui.wrapped(hint, left, y, right - left, 12.0, color);
+    y += 34.0;
+    y = ui.divider(y);
+
+    // Saving
+    ui.label(t(T::Folder), left, y + 12.0, 13.0, TEXT);
+    let open_w = font::measure(t(T::Open), 12.0).0 + 20.0;
+    let path_w = 210.0;
+    let path_x = right - open_w - 6.0 - path_w;
+    let path = elide_start(&settings.folder.display().to_string(), 12.0, path_w - 20.0);
+    ui.field_left(Id::ChangeFolder, &path, path_x, y + 6.0, path_w);
+    ui.button(Id::OpenFolder, t(T::Open), right - open_w, y + 6.0, false);
+    y += ROW;
+    ui.label(t(T::Format), left, y + 12.0, 13.0, TEXT);
+    let seg_w = 60.0;
+    let mut x = right - 2.0 * seg_w;
+    for (i, (name, format)) in [("PNG", Format::Png), ("JPEG", Format::Jpeg)]
+        .iter()
+        .enumerate()
+    {
+        let selected = settings.format == *format;
+        ui.segment(
+            Id::Format(*format),
+            name,
+            x,
+            y + 6.0,
+            seg_w,
+            selected,
+            i == 0,
+            i == 1,
+        );
+        x += seg_w;
+    }
+    y += ROW;
+    ui.switch(Id::QuickSave, t(T::QuickSave), y, settings.quick_save);
+    y + ROW
+}
+
+/// The shortcuts page: every action with its keys; returns where it ends.
+fn shortcuts(
+    ui: &mut Ui,
+    settings: &Settings,
+    recording: Option<Shortcut>,
+    notice: Option<Notice>,
+    mut y: f32,
+) -> f32 {
+    let left = MARGIN;
+    let right = WIDTH as f32 - MARGIN;
+    for which in Shortcut::ALL {
+        let label = match which {
+            Shortcut::Capture => t(T::TakeScreenshot),
+            Shortcut::Pick => t(T::PickColor),
+            Shortcut::FullScreen => t(T::FullScreen),
+            Shortcut::RepeatArea => t(T::RepeatArea),
+            Shortcut::Recognize => t(T::Recognize),
+            Shortcut::Scroll => t(T::Scroll),
+            Shortcut::Pin => t(T::Pin),
+            Shortcut::Copy => t(T::Copy),
+            Shortcut::Save => t(T::Save),
+        };
+        ui.label(label, left, y + 10.0, 13.0, TEXT);
+        let active = recording == Some(which);
+        let keys = settings.shortcut(which);
+        let field = if active {
+            t(T::PressShortcut).to_string()
+        } else if keys.is_empty() {
+            "—".to_string()
+        } else {
+            hotkey_label(keys)
+        };
+        let field_w = 130.0;
+        ui.field(
+            Id::Hotkey(which),
+            &field,
+            right - field_w,
+            y + 4.0,
+            field_w,
+            active,
+        );
+        if keys != which.default_keys() && !active {
+            let w = font::measure(t(T::Reset), 12.0).0;
+            let x = right - field_w - 10.0 - w;
+            ui.link(Id::ResetHotkey(which), t(T::Reset), x, y + 11.0, 12.0);
+        }
+        y += ROW - 4.0;
+    }
+    let (hint, color) = match notice {
+        Some(Notice::ShortcutTaken) => (t(T::ShortcutTaken), ERROR),
+        Some(Notice::ShortcutInvalid) => (t(T::ShortcutInvalid), ERROR),
+        _ => (t(T::ShortcutsHint), MUTED),
+    };
+    ui.wrapped(hint, left, y + 4.0, right - left, 12.0, color);
+    y + 34.0
 }
 
 /// Cuts the start off `text` until it fits in `width`, as `…/Pictures/Snapt`.
@@ -871,7 +979,17 @@ mod tests {
                 hits: Vec::new(),
             };
             let update = UpdateStatus::Available("9.9.9".into());
-            build(&mut ui, &Settings::default(), &update, None, None, true);
+            for tab in [Tab::General, Tab::Shortcuts, Tab::Features] {
+                build(
+                    &mut ui,
+                    &Settings::default(),
+                    &update,
+                    tab,
+                    None,
+                    None,
+                    true,
+                );
+            }
             for (id, r) in &ui.hits {
                 assert!(
                     r.left() >= MARGIN - 0.5
@@ -893,12 +1011,21 @@ mod tests {
             return;
         }
         // Fixed values, so the picture doesn't depend on the OS or the user.
-        let settings = Settings {
-            hotkey: "Ctrl+Shift+S".into(),
+        let mut settings = Settings {
             folder: "/home/user/Pictures/Snapt".into(),
             ..Settings::default()
         };
-        for (lang, name) in [(Lang::En, "settings-en"), (Lang::Ru, "settings-ru")] {
+        // The overlay keys say Cmd on macOS; fix them all to the Linux ones.
+        for which in Shortcut::ALL {
+            *settings.shortcut_mut(which) = which.default_keys().replace("Cmd", "Ctrl");
+        }
+        *settings.shortcut_mut(Shortcut::Capture) = "Ctrl+Shift+X".into();
+        for (lang, name, tab) in [
+            (Lang::En, "settings-en", Tab::General),
+            (Lang::Ru, "settings-ru", Tab::General),
+            (Lang::En, "settings-shortcuts-en", Tab::Shortcuts),
+            (Lang::Ru, "settings-features-ru", Tab::Features),
+        ] {
             let _lang = crate::snapshot::language(lang);
             let mut pixmap = Pixmap::new(WIDTH as u32, HEIGHT as u32).unwrap();
             let mut ui = Ui {
@@ -917,6 +1044,7 @@ mod tests {
                 &mut ui,
                 &settings,
                 &UpdateStatus::UpToDate,
+                tab,
                 None,
                 None,
                 false,

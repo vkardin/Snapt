@@ -32,7 +32,7 @@ use winit::{
 
 use crate::capture::{Bounds, Shot};
 use crate::i18n::{T, t};
-use crate::settings::ColorFormat;
+use crate::settings::{self, ColorFormat, Feature, Shortcut, enabled as on};
 use annotate::{Backdrop, Canvas, Kind, Shape};
 use render::Frame;
 use selection::{Handle, Hit, Point, Rect, Selection};
@@ -552,6 +552,8 @@ impl Overlay {
             return None;
         };
         let has_selection = screen.selection.rect().is_some();
+        let pressed = hotkey_code(code)
+            .and_then(|code| settings::overlay_shortcut(hotkey_modifiers(self.modifiers), code));
         let tool = match code {
             KeyCode::KeyP => Some(Tool::Pen),
             KeyCode::KeyL => Some(Tool::Line),
@@ -585,17 +587,24 @@ impl Overlay {
             }
             KeyCode::Escape => Some(Outcome::Cancel),
             KeyCode::Enter | KeyCode::NumpadEnter => Some(Outcome::Copy(screen.output_or_all())),
-            KeyCode::KeyC if command && self.modifiers.shift_key() => {
-                let image = screen.output_or_all();
-                self.start_recognize(image);
-                None
+            _ if pressed.is_some() => match pressed? {
+                Shortcut::Recognize if on(Feature::Recognize) => {
+                    let image = screen.output_or_all();
+                    self.start_recognize(image);
+                    None
+                }
+                Shortcut::Scroll if on(Feature::Scroll) => screen.scroll(),
+                Shortcut::Pin if on(Feature::Pin) => screen.pin(),
+                Shortcut::Copy => Some(Outcome::Copy(screen.output_or_all())),
+                Shortcut::Save => Some(Outcome::Save(screen.output_or_all())),
+                _ => None,
+            },
+            KeyCode::KeyP if command && on(Feature::Print) => {
+                Some(Outcome::Print(screen.output_or_all()))
             }
-            KeyCode::KeyC if command => Some(Outcome::Copy(screen.output_or_all())),
-            KeyCode::KeyS if command && self.modifiers.shift_key() => screen.scroll(),
-            KeyCode::KeyS if command => Some(Outcome::Save(screen.output_or_all())),
-            KeyCode::KeyP if command => Some(Outcome::Print(screen.output_or_all())),
-            KeyCode::KeyF if command => Some(Outcome::Search(screen.output_or_all())),
-            KeyCode::F3 => screen.pin(),
+            KeyCode::KeyF if command && on(Feature::Search) => {
+                Some(Outcome::Search(screen.output_or_all()))
+            }
             KeyCode::KeyA if command => {
                 screen.commit_text();
                 screen.selection.select_all();
@@ -1196,6 +1205,21 @@ fn draw_magnifier(
         1.0,
     );
     render::blend_pixmap(buf, width, &pixmap, x, y);
+}
+
+/// The `global_hotkey` key for a winit key; both use the W3C key names.
+fn hotkey_code(code: KeyCode) -> Option<global_hotkey::hotkey::Code> {
+    format!("{code:?}").parse().ok()
+}
+
+fn hotkey_modifiers(m: ModifiersState) -> global_hotkey::hotkey::Modifiers {
+    use global_hotkey::hotkey::Modifiers;
+    let mut out = Modifiers::empty();
+    out.set(Modifiers::SHIFT, m.shift_key());
+    out.set(Modifiers::CONTROL, m.control_key());
+    out.set(Modifiers::ALT, m.alt_key());
+    out.set(Modifiers::META, m.super_key());
+    out
 }
 
 /// Outlines the picked shape's `bounds` with a dashed line, clipped to the selection.
