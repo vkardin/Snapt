@@ -8,7 +8,7 @@ use super::{
     annotate::{self, Kind, Shape, Tool},
     render::{self, Frame},
     selection::Rect,
-    toolbar::{Button, Look, PALETTE, Target, Toolbar},
+    toolbar::{Look, PALETTE, Toolbar},
 };
 use crate::snapshot::{assert_matches, from_0rgb};
 
@@ -80,7 +80,8 @@ fn overlay(palette: bool) -> RgbaImage {
     let look = Look {
         tool: Some(Tool::Arrow),
         color: PALETTE[1],
-        hover: Some(Target::Button(Button::Copy)),
+        // A hovered button's tooltip says Ctrl or Cmd depending on the system.
+        hover: None,
         picking: false,
     };
     Toolbar::layout(sel, W as i32, H as i32, 1.0, palette).draw(&mut buf, W as i32, &look);
@@ -89,7 +90,6 @@ fn overlay(palette: bool) -> RgbaImage {
 
 #[test]
 fn overlay_with_selection_shapes_and_toolbar() {
-    // The hovered button shows its tooltip.
     let _lang = crate::snapshot::language(crate::i18n::Lang::En);
     assert_matches("overlay", &overlay(false));
     assert_matches("overlay-palette", &overlay(true));
