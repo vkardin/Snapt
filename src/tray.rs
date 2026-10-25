@@ -1,19 +1,32 @@
 use anyhow::{Context, Result};
 use tray_icon::{
     Icon, TrayIcon, TrayIconBuilder,
-    menu::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem},
+    menu::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu},
 };
 
 use crate::{
+    history::Entry,
     i18n::{T, t},
     icon,
     settings::Settings,
 };
 
+/// The delays offered for a delayed screenshot, in seconds.
+pub const DELAYS: [u64; 3] = [3, 5, 10];
+
 /// What a tray menu click asks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
     Capture,
+    /// Copy every screen at once, without the overlay.
+    FullScreen,
+    /// Open the overlay with the last selected area already selected.
+    RepeatArea,
+    /// Open the overlay after this many seconds.
+    Delay(u64),
+    /// Pin the screenshot at this index of the history, newest first.
+    History(usize),
+    ClearHistory,
     OpenFolder,
     Settings,
     Update,
@@ -25,6 +38,8 @@ pub struct Tray {
     // Dropping the icon removes it from the tray.
     _icon: TrayIcon,
     capture: MenuItem,
+    repeat: MenuItem,
+    history: Submenu,
     commands: Vec<(MenuId, Command)>,
 }
 
@@ -32,6 +47,10 @@ impl Tray {
     /// `update` is the version to offer at the top of the menu, if one is out.
     pub fn new(settings: &Settings, update: Option<&str>) -> Result<Self> {
         let capture = MenuItem::new(t(T::TakeScreenshot), true, None);
+        let full_screen = MenuItem::new(t(T::FullScreen), true, None);
+        let repeat = MenuItem::new(t(T::RepeatArea), false, None);
+        let delayed = Submenu::new(t(T::Delayed), true);
+        let history = Submenu::new(t(T::History), true);
         let open_folder = MenuItem::new(t(T::OpenFolder), true, None);
         let settings_item = MenuItem::new(t(T::SettingsMenu), true, None);
         let quit = MenuItem::new(t(T::Quit), true, None);
@@ -55,8 +74,24 @@ impl Tray {
                 .context("failed to build the tray menu")?;
             commands.push((item.id().clone(), Command::Update));
         }
+        for seconds in DELAYS {
+            let item = MenuItem::new(
+                t(T::Seconds).replace("{}", &seconds.to_string()),
+                true,
+                None,
+            );
+            delayed
+                .append(&item)
+                .context("failed to build the tray menu")?;
+            commands.push((item.id().clone(), Command::Delay(seconds)));
+        }
         menu.append_items(&[
             &capture,
+            &full_screen,
+            &repeat,
+            &delayed,
+            &history,
+            &PredefinedMenuItem::separator(),
             &open_folder,
             &settings_item,
             &PredefinedMenuItem::separator(),
@@ -67,6 +102,8 @@ impl Tray {
 
         commands.extend([
             (capture.id().clone(), Command::Capture),
+            (full_screen.id().clone(), Command::FullScreen),
+            (repeat.id().clone(), Command::RepeatArea),
             (open_folder.id().clone(), Command::OpenFolder),
             (settings_item.id().clone(), Command::Settings),
             (quit.id().clone(), Command::Quit),
@@ -88,10 +125,45 @@ impl Tray {
         let tray = Self {
             _icon: tray,
             capture,
+            repeat,
+            history,
             commands,
         };
         tray.sync(settings);
         Ok(tray)
+    }
+
+    /// Lists `entries` in the history submenu, newest first.
+    pub fn set_history(&mut self, entries: &[Entry]) {
+        while self.history.remove_at(0).is_some() {}
+        self.commands
+            .retain(|(_, c)| !matches!(c, Command::History(_) | Command::ClearHistory));
+        let now = chrono::Local::now();
+        let mut items = Vec::new();
+        for (i, entry) in entries.iter().enumerate() {
+            let item = MenuItem::new(entry.label(now), true, None);
+            self.commands.push((item.id().clone(), Command::History(i)));
+            items.push(item);
+        }
+        if items.is_empty() {
+            items.push(MenuItem::new(t(T::HistoryEmpty), false, None));
+        }
+        let clear = MenuItem::new(t(T::ClearHistory), !entries.is_empty(), None);
+        self.commands
+            .push((clear.id().clone(), Command::ClearHistory));
+        let separator = PredefinedMenuItem::separator();
+        let result = items
+            .iter()
+            .try_for_each(|item| self.history.append(item))
+            .and_then(|()| self.history.append_items(&[&separator, &clear]));
+        if let Err(err) = result {
+            log::warn!("failed to update the history menu: {err}");
+        }
+    }
+
+    /// Enables "Repeat last area" once there is an area to repeat.
+    pub fn set_can_repeat(&self, on: bool) {
+        self.repeat.set_enabled(on);
     }
 
     pub fn command(&self, id: &MenuId) -> Option<Command> {

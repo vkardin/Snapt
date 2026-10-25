@@ -180,6 +180,19 @@ impl Selection {
         self.drag = Drag::Idle;
     }
 
+    /// Selects `rect`, cut to the surface.
+    pub fn set(&mut self, rect: Rect) {
+        let x = rect.x.clamp(0, self.width - 1);
+        let y = rect.y.clamp(0, self.height - 1);
+        self.rect = Some(Rect {
+            x,
+            y,
+            w: rect.w.clamp(1, self.width - x),
+            h: rect.h.clamp(1, self.height - y),
+        });
+        self.drag = Drag::Idle;
+    }
+
     pub fn select_all(&mut self) {
         self.rect = Some(Rect {
             x: 0,

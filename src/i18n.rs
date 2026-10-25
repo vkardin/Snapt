@@ -131,6 +131,15 @@ pub enum T {
     UpdateFailed,
     TrayUpdate,
     Website,
+    // After the shot
+    FullScreen,
+    RepeatArea,
+    Delayed,
+    Seconds,
+    History,
+    HistoryEmpty,
+    ClearHistory,
+    Pin,
 }
 
 /// The current language's text for `key`.
@@ -379,6 +388,31 @@ pub fn tr(lang: Lang, key: T) -> &'static str {
         (Website, En) => "Website",
         (Website, Ru) => "Сайт",
         (Website, Uk) => "Сайт",
+
+        (FullScreen, En) => "Copy full screen",
+        (FullScreen, Ru) => "Скопировать весь экран",
+        (FullScreen, Uk) => "Скопіювати весь екран",
+        (RepeatArea, En) => "Repeat last area",
+        (RepeatArea, Ru) => "Повторить прошлую область",
+        (RepeatArea, Uk) => "Повторити минулу область",
+        (Delayed, En) => "Screenshot with delay",
+        (Delayed, Ru) => "Скриншот с задержкой",
+        (Delayed, Uk) => "Знімок із затримкою",
+        (Seconds, En) => "In {} seconds",
+        (Seconds, Ru) => "Через {} с",
+        (Seconds, Uk) => "Через {} с",
+        (History, En) => "Recent screenshots",
+        (History, Ru) => "Последние скриншоты",
+        (History, Uk) => "Останні знімки",
+        (HistoryEmpty, En) => "No screenshots yet",
+        (HistoryEmpty, Ru) => "Пока пусто",
+        (HistoryEmpty, Uk) => "Поки порожньо",
+        (ClearHistory, En) => "Clear history",
+        (ClearHistory, Ru) => "Очистить историю",
+        (ClearHistory, Uk) => "Очистити історію",
+        (Pin, En) => "Pin to screen",
+        (Pin, Ru) => "Закрепить поверх окон",
+        (Pin, Uk) => "Закріпити поверх вікон",
     }
 }
 
