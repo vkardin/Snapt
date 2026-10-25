@@ -81,6 +81,12 @@ pub enum T {
     Eyedropper,
     Undo,
     Close,
+    Recognize,
+    Recognizing,
+    NoText,
+    RecognizeFailed,
+    OcrMissingWindows,
+    OcrMissingLinux,
     Search,
     Print,
     Copy,
@@ -179,6 +185,36 @@ pub fn tr(lang: Lang, key: T) -> &'static str {
         (Eyedropper, En) => "Pick a color from the screen",
         (Eyedropper, Ru) => "Взять цвет с экрана",
         (Eyedropper, Uk) => "Взяти колір з екрана",
+        (Recognize, En) => "Copy text",
+        (Recognize, Ru) => "Копировать текст",
+        (Recognize, Uk) => "Копіювати текст",
+        (Recognizing, En) => "Recognizing text…",
+        (Recognizing, Ru) => "Распознаём текст…",
+        (Recognizing, Uk) => "Розпізнаємо текст…",
+        (NoText, En) => "No text found in the selection.",
+        (NoText, Ru) => "В выделенной области нет текста.",
+        (NoText, Uk) => "У виділеній області немає тексту.",
+        (RecognizeFailed, En) => "Could not recognize the text.",
+        (RecognizeFailed, Ru) => "Не удалось распознать текст.",
+        (RecognizeFailed, Uk) => "Не вдалося розпізнати текст.",
+        (OcrMissingWindows, En) => {
+            "Add a language with text recognition in Windows Settings, Time & language."
+        }
+        (OcrMissingWindows, Ru) => {
+            "Добавьте язык с распознаванием текста в Параметрах Windows, «Время и язык»."
+        }
+        (OcrMissingWindows, Uk) => {
+            "Додайте мову з розпізнаванням тексту в Параметрах Windows, «Час і мова»."
+        }
+        (OcrMissingLinux, En) => {
+            "Install tesseract-ocr (and tesseract-ocr-rus, -ukr) to recognize text."
+        }
+        (OcrMissingLinux, Ru) => {
+            "Установите tesseract-ocr (и tesseract-ocr-rus, -ukr) для распознавания текста."
+        }
+        (OcrMissingLinux, Uk) => {
+            "Встановіть tesseract-ocr (і tesseract-ocr-rus, -ukr) для розпізнавання тексту."
+        }
         (Undo, En) => "Undo",
         (Undo, Ru) => "Отменить",
         (Undo, Uk) => "Скасувати",

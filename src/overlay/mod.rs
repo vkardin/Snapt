@@ -29,6 +29,7 @@ use winit::{
 };
 
 use crate::capture::Shot;
+use crate::i18n::{T, t};
 use annotate::{Canvas, Kind, Shape};
 use render::Frame;
 use selection::{Handle, Hit, Point, Rect, Selection};
@@ -82,6 +83,10 @@ pub struct Overlay {
     picking: bool,
     /// Text for the clipboard, such as a picked color.
     copied: Option<String>,
+    /// A selection waiting for text recognition.
+    recognize: Option<RgbaImage>,
+    /// A short message over the screen, such as OCR progress.
+    status: Option<String>,
 }
 
 struct Screen {
@@ -136,6 +141,8 @@ impl Overlay {
             palette: false,
             picking: false,
             copied: None,
+            recognize: None,
+            status: None,
         };
         // Show every window only after its first frame is drawn, so nothing flickers.
         for i in 0..overlay.screens.len() {
@@ -153,6 +160,22 @@ impl Overlay {
 
     pub fn style(&self) -> Style {
         self.style
+    }
+
+    /// A selection to recognize text in, once.
+    pub fn take_recognize(&mut self) -> Option<RgbaImage> {
+        self.recognize.take()
+    }
+
+    /// Shows `status` over the screens, or hides it.
+    pub fn set_status(&mut self, status: Option<String>) {
+        self.status = status;
+        self.request_redraw_all();
+    }
+
+    fn start_recognize(&mut self, image: RgbaImage) {
+        self.recognize = Some(image);
+        self.set_status(Some(t(T::Recognizing).into()));
     }
 
     /// Text the overlay wants on the clipboard, once.
@@ -183,7 +206,8 @@ impl Overlay {
         let style = self.style;
         let palette = self.palette;
         let picking = self.picking;
-        self.screens[index].redraw(&style, palette, picking);
+        let status = self.status.clone();
+        self.screens[index].redraw(&style, palette, picking, status.as_deref());
     }
 
     fn request_redraw_all(&self) {
@@ -252,6 +276,9 @@ impl Overlay {
     }
 
     fn press(&mut self, index: usize) -> Option<Outcome> {
+        if self.status.take().is_some() {
+            self.request_redraw_all();
+        }
         if self.picking {
             let screen = &mut self.screens[index];
             let color = screen.pixel_at(screen.cursor);
@@ -345,6 +372,12 @@ impl Overlay {
             Target::Button(Button::Color) => self.palette = !self.palette,
             Target::Button(Button::Undo) => screen.undo(),
             Target::Button(Button::Close) => return Some(Outcome::Cancel),
+            Target::Button(Button::Recognize) => {
+                if let Some(image) = screen.output() {
+                    self.start_recognize(image);
+                }
+                return None;
+            }
             Target::Button(Button::Search) => return screen.output().map(Outcome::Search),
             Target::Button(Button::Print) => return screen.output().map(Outcome::Print),
             Target::Button(Button::Copy) => return screen.output().map(Outcome::Copy),
@@ -439,6 +472,11 @@ impl Overlay {
             }
             KeyCode::Escape => Some(Outcome::Cancel),
             KeyCode::Enter | KeyCode::NumpadEnter => Some(Outcome::Copy(screen.output_or_all())),
+            KeyCode::KeyC if command && self.modifiers.shift_key() => {
+                let image = screen.output_or_all();
+                self.start_recognize(image);
+                None
+            }
             KeyCode::KeyC if command => Some(Outcome::Copy(screen.output_or_all())),
             KeyCode::KeyS if command => Some(Outcome::Save(screen.output_or_all())),
             KeyCode::KeyP if command => Some(Outcome::Print(screen.output_or_all())),
@@ -561,7 +599,7 @@ impl Screen {
         ))
     }
 
-    fn redraw(&mut self, style: &Style, palette: bool, picking: bool) {
+    fn redraw(&mut self, style: &Style, palette: bool, picking: bool, status: Option<&str>) {
         let rect = self.selection.rect();
         let label = rect.map(|r| self.label(r, style)).unwrap_or_default();
         let scale = self.window.scale_factor();
@@ -600,6 +638,9 @@ impl Screen {
                 picking,
             };
             bar.draw(&mut buffer, width, &look);
+        }
+        if let Some(status) = status {
+            draw_status(&mut buffer, width, status, scale);
         }
         if let Some(color) = picked {
             draw_pick_preview(&mut buffer, width, self.cursor, color, scale);
@@ -787,6 +828,24 @@ impl Screen {
     fn output_or_all(&mut self) -> RgbaImage {
         self.output().unwrap_or_else(|| self.image.clone())
     }
+}
+
+/// A message at the top middle of the screen.
+fn draw_status(buf: &mut [u32], width: i32, text: &str, scale: f64) {
+    let s = scale as f32;
+    let size = 14.0 * s;
+    let (tw, th) = crate::font::measure(text, size);
+    let (pad_x, pad_y) = (14.0 * s, 9.0 * s);
+    let w = (tw + 2.0 * pad_x).ceil() as i32;
+    let h = (th + 2.0 * pad_y).ceil() as i32;
+    let Some(mut pixmap) = Pixmap::new(w as u32, h as u32) else {
+        return;
+    };
+    let full = tiny_skia::Rect::from_xywh(0.0, 0.0, w as f32, h as f32);
+    crate::paint::fill_round(&mut pixmap, full, 8.0 * s, 0x111113, 0.94);
+    crate::font::draw(&mut pixmap, text, pad_x, pad_y, size, 0xFFFFFF, 1.0);
+    let x = ((width - w) / 2).max(0);
+    render::blend_pixmap(buf, width, &pixmap, x, (24.0 * s) as i32);
 }
 
 /// A small label next to the cursor with the color under it.
