@@ -17,6 +17,8 @@ mod output;
 mod overlay;
 mod paint;
 mod platform;
+#[cfg(target_os = "linux")]
+mod portal;
 mod settings;
 mod settings_window;
 #[cfg(test)]
@@ -35,7 +37,7 @@ Usage: snapt [--capture | --settings | --logs]
 
   --capture   Take a screenshot right away. If Snapt is already running,
               that copy takes it. Bind this to a key where global
-              shortcuts don't work, such as on Wayland.
+              shortcuts don't work, such as on some Wayland desktops.
   --settings  Open the settings window.
   --logs      Open the folder with the log and crash reports.
   --version   Print the version.";

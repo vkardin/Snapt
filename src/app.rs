@@ -31,6 +31,9 @@ pub enum UserEvent {
     UpdateChecked(Result<Option<Update>, String>, bool),
     /// The installer of an update was downloaded.
     UpdateDownloaded(Result<std::path::PathBuf, String>),
+    /// The desktop portal answered a request for the capture shortcut.
+    #[cfg(target_os = "linux")]
+    PortalShortcut(String, Result<crate::portal::Shortcut, String>),
 }
 
 pub struct App {
@@ -49,6 +52,20 @@ pub struct App {
     update: Option<Update>,
     update_status: UpdateStatus,
     watching_updates: bool,
+    /// The capture shortcut on Wayland, bound through the desktop portal.
+    #[cfg(target_os = "linux")]
+    portal: Portal,
+}
+
+/// The state of the portal shortcut.
+#[cfg(target_os = "linux")]
+#[derive(Default)]
+struct Portal {
+    shortcut: Option<crate::portal::Shortcut>,
+    /// The hotkey of a bind request that has not been answered yet.
+    pending: Option<String>,
+    /// The desktop has no portal for shortcuts, so Snapt doesn't ask again.
+    failed: bool,
 }
 
 impl App {
@@ -83,6 +100,8 @@ impl App {
             update: None,
             update_status: UpdateStatus::Idle,
             watching_updates: false,
+            #[cfg(target_os = "linux")]
+            portal: Portal::default(),
         };
         app.register_hotkey();
         if app.settings.auto_update {
@@ -95,6 +114,15 @@ impl App {
     /// the shortcut is invalid or another app owns it; Snapt then still works
     /// from the tray menu.
     fn register_hotkey(&mut self) -> bool {
+        #[cfg(target_os = "linux")]
+        if platform::is_wayland() && !self.portal.failed {
+            self.bind_portal_shortcut();
+            return true;
+        }
+        self.register_global_hotkey()
+    }
+
+    fn register_global_hotkey(&mut self) -> bool {
         self.unregister_hotkey();
         let hotkey: HotKey = match self.settings.hotkey.parse() {
             Ok(hotkey) => hotkey,
@@ -111,6 +139,50 @@ impl App {
             Err(err) => {
                 log::warn!("could not register {}: {err}", self.settings.hotkey);
                 false
+            }
+        }
+    }
+
+    /// Asks the desktop portal for the capture shortcut in the background, as
+    /// the desktop may first ask the user. The answer comes back as
+    /// [`UserEvent::PortalShortcut`].
+    #[cfg(target_os = "linux")]
+    fn bind_portal_shortcut(&mut self) {
+        let hotkey = self.settings.hotkey.clone();
+        let current = self.portal.shortcut.as_ref().map(|s| &s.trigger);
+        if current == Some(&hotkey) || self.portal.pending.as_ref() == Some(&hotkey) {
+            return;
+        }
+        // Closing the old session unbinds the old key.
+        self.portal.shortcut = None;
+        self.portal.pending = Some(hotkey.clone());
+        let proxy = self.proxy.clone();
+        let description = i18n::t(i18n::T::TakeScreenshot).to_string();
+        std::thread::spawn(move || {
+            let events = proxy.clone();
+            let pressed = move || events.send_event(UserEvent::Capture).is_ok();
+            let result = crate::portal::Shortcut::bind(&hotkey, &description, pressed)
+                .map_err(|e| format!("{e:#}"));
+            let _ = proxy.send_event(UserEvent::PortalShortcut(hotkey, result));
+        });
+    }
+
+    #[cfg(target_os = "linux")]
+    fn portal_answered(&mut self, hotkey: String, result: Result<crate::portal::Shortcut, String>) {
+        if self.portal.pending.as_ref() != Some(&hotkey) {
+            // A newer request is on its way; this shortcut drops and unbinds.
+            return;
+        }
+        self.portal.pending = None;
+        match result {
+            Ok(shortcut) => self.portal.shortcut = Some(shortcut),
+            Err(err) => {
+                log::warn!(
+                    "no global shortcut from the desktop portal ({err}); \
+                     bind `snapt --capture` to a key in the system settings"
+                );
+                self.portal.failed = true;
+                self.register_global_hotkey();
             }
         }
     }
@@ -370,11 +442,6 @@ impl ApplicationHandler<UserEvent> for App {
         if cause == StartCause::Init {
             event_loop.set_control_flow(ControlFlow::Wait);
             self.rebuild_tray();
-            if platform::is_wayland() {
-                log::info!(
-                    "Wayland has no global shortcuts for apps: bind `snapt --capture` to a key in the system settings"
-                );
-            }
             if self.capture_now {
                 self.start_capture(event_loop);
             }
@@ -396,6 +463,8 @@ impl ApplicationHandler<UserEvent> for App {
                 }
             }
             UserEvent::Capture => self.start_capture(event_loop),
+            #[cfg(target_os = "linux")]
+            UserEvent::PortalShortcut(hotkey, result) => self.portal_answered(hotkey, result),
             UserEvent::Settings => self.open_settings(event_loop),
             UserEvent::UpdateChecked(result, manual) => {
                 // The daily check stays quiet unless the user turned it off meanwhile.
