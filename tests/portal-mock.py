@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """A fake xdg-desktop-portal for the ignored tests in src/portal.rs.
 
-It answers Screenshot with a 64x32 PNG and GlobalShortcuts by binding what
-it is asked for and pressing the shortcut twice. Run the tests with:
+It answers Screenshot with a 64x32 PNG, Background by allowing what it is
+asked for, and GlobalShortcuts by binding what it is asked for and pressing
+the shortcut twice. Run the tests with:
 
     dbus-run-session -- sh -c 'python3 tests/portal-mock.py & sleep 1; cargo test -- --ignored portal'
 
@@ -44,6 +45,11 @@ class Portal(dbus.service.Object):
         print("Screenshot", dict(opts), flush=True)
         png(SHOT, 64, 32)
         return respond(sender, opts["handle_token"], {"uri": "file://" + SHOT.replace(" ", "%20")})
+
+    @dbus.service.method("org.freedesktop.portal.Background", in_signature="sa{sv}", out_signature="o", sender_keyword="sender")
+    def RequestBackground(self, parent, opts, sender):
+        print("RequestBackground", dict(opts), flush=True)
+        return respond(sender, opts["handle_token"], {"background": True, "autostart": bool(opts["autostart"])})
 
     @dbus.service.method("org.freedesktop.portal.GlobalShortcuts", in_signature="a{sv}", out_signature="o", sender_keyword="sender")
     def CreateSession(self, opts, sender):

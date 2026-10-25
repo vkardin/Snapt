@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.9.0.schema.json
+PackageIdentifier: vkardin.Snapt
+PackageVersion: 1.3.0
+PackageLocale: en-US
+Publisher: vkardin
+PublisherUrl: https://github.com/vkardin
+PublisherSupportUrl: https://github.com/vkardin/snapt/issues
+PackageName: Snapt
+PackageUrl: https://vkardin.github.io/snapt/
+License: MIT
+LicenseUrl: https://github.com/vkardin/snapt/blob/main/LICENSE
+ShortDescription: A fast, lightweight, open-source screenshot tool.
+Description: |-
+  Snapt lives in the tray. Press PrtSc, select an area, draw on it, then copy, save, print
+  or search for similar images. It recognizes text in the selection and picks any color.
+Moniker: snapt
+Tags:
+  - screenshot
+  - screen-capture
+  - annotation
+  - lightshot
+ReleaseNotesUrl: https://github.com/vkardin/snapt/releases/tag/v1.3.0
+ManifestType: defaultLocale
+ManifestVersion: 1.9.0
