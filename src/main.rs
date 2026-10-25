@@ -29,11 +29,12 @@ use app::{App, UserEvent};
 
 const HELP: &str = "Snapt: a fast, lightweight screenshot tool.
 
-Usage: snapt [--capture | --settings]
+Usage: snapt [--capture | --pick | --settings]
 
   --capture   Take a screenshot right away. If Snapt is already running,
               that copy takes it. Bind this to a key where global
               shortcuts don't work, such as on Wayland.
+  --pick      Pick a color from the screen and copy it.
   --settings  Open the settings window.
   --version   Print the version.";
 
@@ -48,9 +49,17 @@ fn main() -> Result<()> {
         println!("{HELP}");
         return Ok(());
     }
+    let start = if args.iter().any(|a| a == "--settings") {
+        Some(instance::Request::Settings)
+    } else if args.iter().any(|a| a == "--pick") {
+        Some(instance::Request::Pick)
+    } else if args.iter().any(|a| a == "--capture") {
+        Some(instance::Request::Capture)
+    } else {
+        None
+    };
     // A second copy hands over to the running one, which takes the screenshot.
-    let settings = args.iter().any(|a| a == "--settings");
-    if instance::forward(settings) {
+    if instance::forward(start.unwrap_or(instance::Request::Capture)) {
         return Ok(());
     }
     log::info!("Snapt {} starting", env!("CARGO_PKG_VERSION"));
@@ -76,11 +85,7 @@ fn main() -> Result<()> {
 
     instance::listen(event_loop.create_proxy());
 
-    let mut app = App::new(
-        args.iter().any(|a| a == "--capture"),
-        settings,
-        event_loop.create_proxy(),
-    )?;
+    let mut app = App::new(start, event_loop.create_proxy())?;
     event_loop.run_app(&mut app)?;
     Ok(())
 }

@@ -65,6 +65,8 @@ pub fn current() -> Lang {
 pub enum T {
     // Tray
     TakeScreenshot,
+    PickColor,
+    ColorFormat,
     OpenFolder,
     SettingsMenu,
     About,
@@ -143,6 +145,12 @@ pub fn tr(lang: Lang, key: T) -> &'static str {
     use T::*;
     match (key, lang) {
         (TakeScreenshot, En) => "Take screenshot",
+        (PickColor, En) => "Pick a color",
+        (PickColor, Ru) => "Пипетка",
+        (PickColor, Uk) => "Піпетка",
+        (ColorFormat, En) => "Color format",
+        (ColorFormat, Ru) => "Формат цвета",
+        (ColorFormat, Uk) => "Формат кольору",
         (TakeScreenshot, Ru) => "Сделать скриншот",
         (TakeScreenshot, Uk) => "Зробити знімок екрана",
         (OpenFolder, En) => "Open screenshots folder",

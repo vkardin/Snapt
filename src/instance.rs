@@ -16,17 +16,34 @@ use winit::event_loop::EventLoopProxy;
 
 use crate::{app::UserEvent, settings::Settings};
 
-const CAPTURE: &str = "snapt capture";
-const SETTINGS: &str = "snapt settings";
 const REPLY: &str = "snapt ok";
+
+/// What a later copy of Snapt asks the running one for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Request {
+    Capture,
+    Settings,
+    Pick,
+}
+
+impl Request {
+    const ALL: [Request; 3] = [Request::Capture, Request::Settings, Request::Pick];
+
+    fn line(self) -> &'static str {
+        match self {
+            Request::Capture => "snapt capture",
+            Request::Settings => "snapt settings",
+            Request::Pick => "snapt pick",
+        }
+    }
+}
 
 fn port_file() -> Option<PathBuf> {
     Some(Settings::path()?.with_file_name("instance.port"))
 }
 
-/// Asks a running copy to take a screenshot, or to show its settings.
-/// Returns false when none answers.
-pub fn forward(settings: bool) -> bool {
+/// Asks a running copy for `request`. Returns false when none answers.
+pub fn forward(request: Request) -> bool {
     let Some(port) = port_file()
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|s| s.trim().parse::<u16>().ok())
@@ -38,8 +55,10 @@ pub fn forward(settings: bool) -> bool {
         return false;
     };
     let _ = stream.set_read_timeout(Some(Duration::from_millis(1000)));
-    let request = if settings { SETTINGS } else { CAPTURE };
-    if stream.write_all(format!("{request}\n").as_bytes()).is_err() {
+    if stream
+        .write_all(format!("{}\n", request.line()).as_bytes())
+        .is_err()
+    {
         return false;
     }
     // Another program may have taken the port since; only Snapt answers like this.
@@ -74,13 +93,11 @@ pub fn listen(proxy: EventLoopProxy<UserEvent>) {
             if reader.read_line(&mut line).is_err() {
                 continue;
             }
-            let event = match line.trim() {
-                CAPTURE => UserEvent::Capture,
-                SETTINGS => UserEvent::Settings,
-                _ => continue,
+            let Some(request) = Request::ALL.into_iter().find(|r| r.line() == line.trim()) else {
+                continue;
             };
             let _ = (&stream).write_all(format!("{REPLY}\n").as_bytes());
-            if proxy.send_event(event).is_err() {
+            if proxy.send_event(UserEvent::Request(request)).is_err() {
                 break;
             }
         }
