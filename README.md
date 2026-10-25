@@ -135,6 +135,11 @@ and publishes a GitHub Release.
 Bug reports and ideas are welcome in [Issues](https://github.com/vkardin/snapt/issues).
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how to build, test and send a pull request.
 
+## Support
+
+Snapt is free and has no ads. If it saves you time, you can support development with crypto on the
+[website](https://vkardin.github.io/snapt/#donate).
+
 ## License
 
 [MIT](LICENSE) © vkardin
