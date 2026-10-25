@@ -849,7 +849,7 @@ mod tests {
     #[test]
     fn every_language_lays_out_inside_the_window() {
         for lang in Lang::ALL {
-            crate::i18n::set(lang);
+            let _lang = crate::snapshot::language(lang);
             let mut pixmap = Pixmap::new(WIDTH as u32, HEIGHT as u32).unwrap();
             let mut ui = Ui {
                 pixmap: &mut pixmap,
@@ -868,6 +868,49 @@ mod tests {
                 );
             }
         }
-        crate::i18n::set(Lang::En);
+    }
+
+    // The hint under "Replace system screenshots" differs between systems
+    // and desktops, so the reference is the one for Linux outside GNOME.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn settings_window_snapshot() {
+        if crate::platform::replace_system_hint() != T::ReplaceHintLinux {
+            eprintln!("skipped: the reference is for desktops other than GNOME");
+            return;
+        }
+        // Fixed values, so the picture doesn't depend on the OS or the user.
+        let settings = Settings {
+            hotkey: "Ctrl+Shift+S".into(),
+            folder: "/home/user/Pictures/Snapt".into(),
+            ..Settings::default()
+        };
+        for (lang, name) in [(Lang::En, "settings-en"), (Lang::Ru, "settings-ru")] {
+            let _lang = crate::snapshot::language(lang);
+            let mut pixmap = Pixmap::new(WIDTH as u32, HEIGHT as u32).unwrap();
+            let mut ui = Ui {
+                pixmap: &mut pixmap,
+                scale: 1.0,
+                hover: None,
+                hits: Vec::new(),
+            };
+            ui.fill(
+                SkRect::from_xywh(0.0, 0.0, WIDTH as f32, HEIGHT as f32),
+                0.0,
+                BG,
+            );
+            // Not `Idle`, which shows the version and would change every release.
+            build(
+                &mut ui,
+                &settings,
+                &UpdateStatus::UpToDate,
+                false,
+                None,
+                false,
+            );
+            let image =
+                image::RgbaImage::from_raw(WIDTH as u32, HEIGHT as u32, pixmap.take()).unwrap();
+            crate::snapshot::assert_matches(name, &image);
+        }
     }
 }

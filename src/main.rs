@@ -19,6 +19,8 @@ mod paint;
 mod platform;
 mod settings;
 mod settings_window;
+#[cfg(test)]
+mod snapshot;
 mod tray;
 mod updater;
 
