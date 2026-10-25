@@ -13,11 +13,12 @@ use crate::{
     capture,
     history::History,
     i18n::{self, T, t},
+    instance::Request,
     ocr, output,
     overlay::{Area, Outcome, Overlay, Style},
     pin::{Pin, PinAction},
     platform,
-    settings::{self, DEFAULT_HOTKEY, Settings},
+    settings::{self, Settings, Shortcut},
     settings_window::{Action, Notice, SettingsWindow, UpdateStatus},
     tray::{Command, Tray},
     updater::{self, Update},
@@ -28,10 +29,8 @@ use crate::{
 pub enum UserEvent {
     Menu(MenuEvent),
     Hotkey(GlobalHotKeyEvent),
-    /// Another copy of Snapt was started and asks for a screenshot.
-    Capture,
-    /// Another copy of Snapt was started with `--settings`.
-    Settings,
+    /// Another copy of Snapt was started and asks for something.
+    Request(Request),
     /// An update check finished; the flag tells whether the user asked for it.
     UpdateChecked(Result<Option<Update>, String>, bool),
     /// The installer of an update was downloaded.
@@ -43,7 +42,8 @@ pub enum UserEvent {
 pub struct App {
     // The manager unregisters its hotkeys when dropped, so it must live as long as the app.
     hotkeys: GlobalHotKeyManager,
-    capture_hotkey: Option<HotKey>,
+    /// The registered shortcuts, by [`Shortcut`].
+    registered: [Option<HotKey>; 2],
     tray: Option<Tray>,
     overlay: Option<Overlay>,
     pins: Vec<Pin>,
@@ -53,8 +53,8 @@ pub struct App {
     settings_window: Option<SettingsWindow>,
     settings: Settings,
     style: Style,
-    capture_now: bool,
-    settings_now: bool,
+    /// What to open as soon as the app starts.
+    start: Option<Request>,
     output: output::Output,
     proxy: EventLoopProxy<UserEvent>,
     update: Option<Update>,
@@ -63,13 +63,7 @@ pub struct App {
 }
 
 impl App {
-    /// `capture_now` opens the overlay as soon as the app starts, `settings_now`
-    /// the settings window.
-    pub fn new(
-        capture_now: bool,
-        settings_now: bool,
-        proxy: EventLoopProxy<UserEvent>,
-    ) -> Result<Self> {
+    pub fn new(start: Option<Request>, proxy: EventLoopProxy<UserEvent>) -> Result<Self> {
         let hotkeys = GlobalHotKeyManager::new().context("failed to start the hotkey manager")?;
         let settings = Settings::load();
         i18n::set(settings.lang());
@@ -81,7 +75,7 @@ impl App {
         };
         let mut app = Self {
             hotkeys,
-            capture_hotkey: None,
+            registered: [None, None],
             tray: None,
             overlay: None,
             pins: Vec::new(),
@@ -90,47 +84,53 @@ impl App {
             settings_window: None,
             settings,
             style,
-            capture_now,
-            settings_now,
+            start,
             output: output::Output::new()?,
             proxy,
             update: None,
             update_status: UpdateStatus::Idle,
             watching_updates: false,
         };
-        app.register_hotkey();
+        app.register_hotkeys();
         if app.settings.auto_update {
             app.watch_updates();
         }
         Ok(app)
     }
 
-    /// (Re)registers the capture shortcut from the settings. Returns false when
-    /// the shortcut is invalid or another app owns it; Snapt then still works
-    /// from the tray menu.
-    fn register_hotkey(&mut self) -> bool {
-        self.unregister_hotkey();
-        let hotkey: HotKey = match self.settings.hotkey.parse() {
+    /// (Re)registers one shortcut from the settings. Returns false when the
+    /// shortcut is invalid or another app owns it; Snapt then still works from
+    /// the tray menu.
+    fn register_hotkey(&mut self, which: Shortcut) -> bool {
+        self.unregister_hotkey(which);
+        let keys = self.settings.shortcut(which).to_string();
+        let hotkey: HotKey = match keys.parse() {
             Ok(hotkey) => hotkey,
             Err(err) => {
-                log::warn!("bad capture shortcut {:?}: {err}", self.settings.hotkey);
+                log::warn!("bad shortcut {keys:?}: {err}");
                 return false;
             }
         };
         match self.hotkeys.register(hotkey) {
             Ok(()) => {
-                self.capture_hotkey = Some(hotkey);
+                self.registered[which as usize] = Some(hotkey);
                 true
             }
             Err(err) => {
-                log::warn!("could not register {}: {err}", self.settings.hotkey);
+                log::warn!("could not register {keys}: {err}");
                 false
             }
         }
     }
 
-    fn unregister_hotkey(&mut self) {
-        if let Some(old) = self.capture_hotkey.take() {
+    fn register_hotkeys(&mut self) {
+        for which in Shortcut::ALL {
+            self.register_hotkey(which);
+        }
+    }
+
+    fn unregister_hotkey(&mut self, which: Shortcut) {
+        if let Some(old) = self.registered[which as usize].take() {
             let _ = self.hotkeys.unregister(old);
         }
     }
@@ -145,16 +145,17 @@ impl App {
     }
 
     /// Freezes the screens and opens the selection overlay, with `area`
-    /// already selected when given.
-    fn start_capture(&mut self, event_loop: &ActiveEventLoop, area: Option<Area>) {
+    /// already selected when given, or with `pick` only the color picker.
+    fn start_capture(&mut self, event_loop: &ActiveEventLoop, area: Option<Area>, pick: bool) {
         if self.overlay.is_some() {
             return;
         }
         if !platform::screen_access() {
             return;
         }
+        let format = self.settings.color_format;
         let result = capture::all_monitors()
-            .and_then(|shots| Overlay::open(event_loop, shots, self.style, area));
+            .and_then(|shots| Overlay::open(event_loop, shots, self.style, area, pick, format));
         match result {
             Ok(overlay) => self.overlay = Some(overlay),
             Err(err) => log::error!("screenshot failed: {err:#}"),
@@ -289,7 +290,7 @@ impl App {
         let proxy = self.proxy.clone();
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(seconds));
-            let _ = proxy.send_event(UserEvent::Capture);
+            let _ = proxy.send_event(UserEvent::Request(Request::Capture));
         });
     }
 
@@ -340,11 +341,20 @@ impl App {
         }
     }
 
+    fn request(&mut self, event_loop: &ActiveEventLoop, request: Request) {
+        match request {
+            Request::Capture => self.start_capture(event_loop, None, false),
+            Request::Pick => self.start_capture(event_loop, None, true),
+            Request::Settings => self.open_settings(event_loop),
+        }
+    }
+
     fn run_command(&mut self, event_loop: &ActiveEventLoop, command: Command) {
         match command {
-            Command::Capture => self.start_capture(event_loop, None),
+            Command::Capture => self.start_capture(event_loop, None, false),
+            Command::PickColor => self.start_capture(event_loop, None, true),
             Command::FullScreen => self.copy_full_screen(),
-            Command::RepeatArea => self.start_capture(event_loop, self.last_area),
+            Command::RepeatArea => self.start_capture(event_loop, self.last_area, false),
             Command::Delay(seconds) => self.capture_later(seconds),
             Command::History(index) => self.pin_from_history(event_loop, index),
             Command::ClearHistory => {
@@ -435,7 +445,7 @@ impl App {
             Action::Close => {
                 // The window is hidden, not destroyed; free its memory anyway.
                 self.settings_window = None;
-                self.register_hotkey();
+                self.register_hotkeys();
                 return;
             }
             Action::Language(lang) => {
@@ -460,7 +470,7 @@ impl App {
                     Ok(()) => {
                         self.settings.replace_system = on;
                         // The system tool may have held the key until now.
-                        self.register_hotkey();
+                        self.register_hotkey(Shortcut::Capture);
                     }
                     Err(err) => {
                         log::error!("failed to replace the system screenshot tool: {err:#}");
@@ -468,13 +478,18 @@ impl App {
                     }
                 }
             }
-            // While the field listens, the current shortcut must not fire.
-            Action::Recording(true) => self.unregister_hotkey(),
-            Action::Recording(false) => {
-                self.register_hotkey();
+            // While a field listens, the current shortcuts must not fire.
+            Action::Recording(true) => {
+                for which in Shortcut::ALL {
+                    self.unregister_hotkey(which);
+                }
             }
-            Action::Hotkey(hotkey) => notice = self.set_hotkey(hotkey),
-            Action::ResetHotkey => notice = self.set_hotkey(DEFAULT_HOTKEY.into()),
+            Action::Recording(false) => self.register_hotkeys(),
+            Action::Hotkey(which, hotkey) => notice = self.set_hotkey(which, hotkey),
+            Action::ResetHotkey(which) => {
+                notice = self.set_hotkey(which, which.default_keys().into());
+            }
+            Action::ColorFormat(format) => self.settings.color_format = format,
             Action::ChangeFolder => {
                 let picked = rfd::FileDialog::new()
                     .set_title(i18n::t(i18n::T::FolderTitle))
@@ -513,15 +528,23 @@ impl App {
         }
     }
 
-    /// Switches to `hotkey`, keeping the old one when the new one can't be registered.
-    fn set_hotkey(&mut self, hotkey: String) -> Option<Notice> {
-        let previous = std::mem::replace(&mut self.settings.hotkey, hotkey);
-        if !self.register_hotkey() {
-            self.settings.hotkey = previous;
-            self.register_hotkey();
+    /// Switches `which` to `hotkey`, keeping the old one when the new one can't
+    /// be registered.
+    fn set_hotkey(&mut self, which: Shortcut, hotkey: String) -> Option<Notice> {
+        // Recording unregistered both; bring the other one back too.
+        self.register_hotkeys();
+        let other = Shortcut::ALL.into_iter().find(|w| *w != which)?;
+        if hotkey == self.settings.shortcut(other) {
             return Some(Notice::ShortcutTaken);
         }
-        if self.settings.replace_system
+        let previous = std::mem::replace(self.settings.shortcut_mut(which), hotkey);
+        if !self.register_hotkey(which) {
+            *self.settings.shortcut_mut(which) = previous;
+            self.register_hotkey(which);
+            return Some(Notice::ShortcutTaken);
+        }
+        if which == Shortcut::Capture
+            && self.settings.replace_system
             && let Err(err) = platform::replace_system_screenshot(true, &self.settings.hotkey)
         {
             log::warn!("failed to update the system shortcut: {err:#}");
@@ -541,11 +564,8 @@ impl ApplicationHandler<UserEvent> for App {
                     "Wayland has no global shortcuts for apps: bind `snapt --capture` to a key in the system settings"
                 );
             }
-            if self.capture_now {
-                self.start_capture(event_loop, None);
-            }
-            if self.settings_now {
-                self.open_settings(event_loop);
+            if let Some(request) = self.start.take() {
+                self.request(event_loop, request);
             }
         }
     }
@@ -555,15 +575,19 @@ impl ApplicationHandler<UserEvent> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
             UserEvent::Hotkey(event) => {
-                if Some(event.id()) == self.capture_hotkey.map(|h| h.id())
-                    && event.state() == HotKeyState::Pressed
+                if event.state() != HotKeyState::Pressed {
+                    return;
+                }
+                if Some(event.id()) == self.registered[Shortcut::Capture as usize].map(|h| h.id()) {
+                    self.start_capture(event_loop, None, false);
+                } else if Some(event.id())
+                    == self.registered[Shortcut::Pick as usize].map(|h| h.id())
                 {
-                    self.start_capture(event_loop, None);
+                    self.start_capture(event_loop, None, true);
                 }
             }
-            UserEvent::Capture => self.start_capture(event_loop, None),
+            UserEvent::Request(request) => self.request(event_loop, request),
             UserEvent::Recognized(result) => self.recognized(event_loop, result),
-            UserEvent::Settings => self.open_settings(event_loop),
             UserEvent::UpdateChecked(result, manual) => {
                 // The daily check stays quiet unless the user turned it off meanwhile.
                 if !manual && !self.settings.auto_update {
@@ -648,8 +672,8 @@ impl ApplicationHandler<UserEvent> for App {
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         self.overlay = None;
         self.pins.clear();
-        if let Some(hotkey) = self.capture_hotkey.take() {
-            let _ = self.hotkeys.unregister(hotkey);
+        for which in Shortcut::ALL {
+            self.unregister_hotkey(which);
         }
         log::info!("Snapt stopped");
     }
