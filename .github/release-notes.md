@@ -28,3 +28,5 @@ Snapt is not code-signed yet, so the system warns you the first time you open it
 Snapt starts in the tray (menu bar on macOS). Press **PrtSc** (**Cmd+Shift+9** on macOS) to take a
 screenshot, select an area, draw on it with the panel next to it, then press `Ctrl+C` to copy or
 `Ctrl+S` to save. The shortcut, folder, format and language are in **Settings…** in the tray menu.
+
+More about Snapt, with answers to common questions, on the [website](https://vkardin.github.io/snapt/).
