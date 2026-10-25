@@ -41,6 +41,11 @@ impl Output {
             .context("failed to copy the screenshot")
     }
 
+    pub fn copy_text(&mut self, text: &str) -> Result<()> {
+        let clipboard = self.clipboard.as_mut().context("clipboard unavailable")?;
+        clipboard.set_text(text).context("failed to copy the text")
+    }
+
     /// Saves the shot into the screenshots folder, or asks where unless quick save is on.
     /// Returns `None` when the user cancels. The folder picked becomes the new default.
     pub fn save(&mut self, shot: &RgbaImage, settings: &mut Settings) -> Result<Option<PathBuf>> {
