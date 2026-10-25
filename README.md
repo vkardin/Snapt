@@ -27,7 +27,8 @@ No accounts, no cloud, a few megabytes on disk.
 
 ## Features
 
-- Select an area on any monitor, HiDPI aware, with handles to move and resize it.
+- Select an area on any monitor, or a whole window with one click, HiDPI aware, with
+  handles to move and resize it.
 - Draw on it: pen, line, arrow, rectangle, marker and text, in any color, or one picked
   from the screen with the eyedropper.
 - A color picker on its own shortcut (`Ctrl+Alt+C`) or in the tray: a magnifier shows the
@@ -63,6 +64,7 @@ The screen freezes, then:
 | Action | How |
 | --- | --- |
 | Select an area | Drag with the left mouse button |
+| Select a window | Point at it and click |
 | Move or resize it | Drag inside the selection or by its handles |
 | Select the whole screen | `Ctrl+A` |
 | Pick a drawing tool | Click it in the panel, or press `P` pen, `L` line, `A` arrow, `R` rectangle, `M` marker, `T` text |
