@@ -13,7 +13,7 @@ use winit::{
 
 use crate::{
     capture, output,
-    overlay::{Outcome, Overlay},
+    overlay::{Outcome, Overlay, Style},
     tray::Tray,
 };
 
@@ -30,11 +30,14 @@ pub struct App {
     capture_hotkey: HotKey,
     tray: Option<Tray>,
     overlay: Option<Overlay>,
+    style: Style,
+    capture_now: bool,
     output: output::Output,
 }
 
 impl App {
-    pub fn new() -> Result<Self> {
+    /// `capture_now` opens the overlay as soon as the app starts.
+    pub fn new(capture_now: bool) -> Result<Self> {
         let hotkeys = GlobalHotKeyManager::new().context("failed to start the hotkey manager")?;
         let capture_hotkey = HotKey::new(None, Code::PrintScreen);
         if let Err(err) = hotkeys.register(capture_hotkey) {
@@ -47,6 +50,8 @@ impl App {
             capture_hotkey,
             tray: None,
             overlay: None,
+            style: Style::default(),
+            capture_now,
             output: output::Output::new()?,
         })
     }
@@ -56,7 +61,8 @@ impl App {
         if self.overlay.is_some() {
             return;
         }
-        let result = capture::all_monitors().and_then(|shots| Overlay::open(event_loop, shots));
+        let result =
+            capture::all_monitors().and_then(|shots| Overlay::open(event_loop, shots, self.style));
         match result {
             Ok(overlay) => self.overlay = Some(overlay),
             Err(err) => log::error!("screenshot failed: {err:#}"),
@@ -65,13 +71,25 @@ impl App {
 
     fn finish_capture(&mut self, outcome: Outcome) {
         // Close the overlay first so it is not in the way of the save dialog.
-        self.overlay = None;
+        if let Some(overlay) = self.overlay.take() {
+            self.style = overlay.style();
+        }
         match outcome {
             Outcome::Cancel => {}
             Outcome::Copy(shot) => match self.output.copy(&shot) {
                 Ok(()) => log::info!("copied {}×{} to the clipboard", shot.width(), shot.height()),
                 Err(err) => log::error!("{err:#}"),
             },
+            Outcome::Print(shot) => {
+                if let Err(err) = self.output.print(&shot) {
+                    log::error!("{err:#}");
+                }
+            }
+            Outcome::Search(shot) => {
+                if let Err(err) = self.output.search(&shot) {
+                    log::error!("{err:#}");
+                }
+            }
             Outcome::Save(shot) => match self.output.save_as(&shot) {
                 Ok(Some(path)) => log::info!("saved {}", path.display()),
                 Ok(None) => {}
@@ -89,6 +107,9 @@ impl ApplicationHandler<UserEvent> for App {
             match Tray::new() {
                 Ok(tray) => self.tray = Some(tray),
                 Err(err) => log::error!("failed to create the tray icon: {err:#}"),
+            }
+            if self.capture_now {
+                self.start_capture(event_loop);
             }
         }
     }
