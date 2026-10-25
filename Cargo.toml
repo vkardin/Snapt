@@ -6,6 +6,7 @@ rust-version = "1.85"
 description = "A fast, lightweight, open-source screenshot tool for Windows, macOS and Linux."
 license = "MIT"
 repository = "https://github.com/vkardin/snapt"
+homepage = "https://vkardin.github.io/snapt/"
 readme = "README.md"
 keywords = ["screenshot", "screen-capture", "annotation", "lightshot"]
 categories = ["multimedia::images", "gui"]

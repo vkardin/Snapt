@@ -25,8 +25,10 @@ CI runs the same checks on Windows, macOS and Linux.
 
 ## Website
 
-The website at [vkardin.github.io/snapt](https://vkardin.github.io/snapt/) is a single static
-page in [`site/`](site). Open `site/index.html` in a browser to preview it. Changes to `site/`
+The website at [vkardin.github.io/snapt](https://vkardin.github.io/snapt/) is a static page
+in [`site/`](site), in English (`index.html`), Russian (`ru/`) and Ukrainian (`uk/`). The pages share
+`style.css` and `app.js`; when you change the text, change all three. Preview it with
+`python3 -m http.server -d site` and open http://localhost:8000. Changes to `site/`
 are published to GitHub Pages when they land on `main`.
 
 ## Guidelines
