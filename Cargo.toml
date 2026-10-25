@@ -24,6 +24,8 @@ winit = "0.30"
 xcap = { version = "0.9", default-features = false }
 softbuffer = "0.4"
 rfd = "0.17"
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
+ab_glyph = "0.2"
 
 # The KSNI backend talks to the tray over D-Bus directly, so Linux builds need no GTK.
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -70,4 +72,4 @@ signing-identity = "-"
 installer-mode = "currentUser"
 
 [package.metadata.packager.deb]
-depends = ["libxcb1", "libxcb-randr0", "libxcb-shm0", "libdbus-1-3", "libpipewire-0.3-0", "libwayland-client0", "libegl1", "libgbm1"]
+depends = ["libxcb1", "libxkbcommon-x11-0", "libxcb-randr0", "libxcb-shm0", "libdbus-1-3", "libpipewire-0.3-0", "libwayland-client0", "libegl1", "libgbm1"]

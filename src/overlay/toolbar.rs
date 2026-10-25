@@ -1,0 +1,559 @@
+//! The two LightShot-style panels around the selection: drawing tools on the
+//! right, actions below, plus the color palette and button tooltips.
+
+use tiny_skia::{
+    Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, Rect as SkRect, Stroke,
+    Transform,
+};
+
+use super::annotate::{Tool, rgb};
+use super::render::{self, ACCENT};
+use super::selection::{Point, Rect};
+use crate::font;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Button {
+    Tool(Tool),
+    Color,
+    Undo,
+    Close,
+    Search,
+    Print,
+    Copy,
+    Save,
+}
+
+const TOOLS: [Button; 9] = [
+    Button::Tool(Tool::Pen),
+    Button::Tool(Tool::Line),
+    Button::Tool(Tool::Arrow),
+    Button::Tool(Tool::Rect),
+    Button::Tool(Tool::Marker),
+    Button::Tool(Tool::Text),
+    Button::Color,
+    Button::Undo,
+    Button::Close,
+];
+const ACTIONS: [Button; 4] = [Button::Search, Button::Print, Button::Copy, Button::Save];
+
+pub const PALETTE: [u32; 10] = [
+    0xFF3B30, 0xFF9500, 0xFFCC00, 0x34C759, 0x32ADE6, 0x007AFF, 0xAF52DE, 0xFF2D78, 0x000000,
+    0xFFFFFF,
+];
+
+#[cfg(target_os = "macos")]
+const MOD: &str = "Cmd";
+#[cfg(not(target_os = "macos"))]
+const MOD: &str = "Ctrl";
+
+impl Button {
+    pub fn tooltip(self) -> String {
+        match self {
+            Button::Tool(Tool::Pen) => "Pen (P)".into(),
+            Button::Tool(Tool::Line) => "Line (L)".into(),
+            Button::Tool(Tool::Arrow) => "Arrow (A)".into(),
+            Button::Tool(Tool::Rect) => "Rectangle (R)".into(),
+            Button::Tool(Tool::Marker) => "Marker (M)".into(),
+            Button::Tool(Tool::Text) => "Text (T)".into(),
+            Button::Color => "Color".into(),
+            Button::Undo => format!("Undo ({MOD}+Z)"),
+            Button::Close => "Close (Esc)".into(),
+            Button::Search => format!("Search for similar images ({MOD}+F)"),
+            Button::Print => format!("Print ({MOD}+P)"),
+            Button::Copy => format!("Copy ({MOD}+C)"),
+            Button::Save => format!("Save ({MOD}+S)"),
+        }
+    }
+}
+
+/// What a point on the toolbars hits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target {
+    Button(Button),
+    Swatch(u32),
+    /// Panel background between buttons.
+    Panel,
+}
+
+/// The placed panels for one selection.
+pub struct Toolbar {
+    scale: f64,
+    panels: Vec<Rect>,
+    buttons: Vec<(Button, Rect)>,
+    swatches: Vec<(u32, Rect)>,
+}
+
+/// What the toolbar shows besides its layout.
+pub struct Look {
+    pub tool: Option<Tool>,
+    pub color: u32,
+    pub hover: Option<Target>,
+}
+
+impl Toolbar {
+    /// Places the panels around `sel` on a `width` × `height` screen.
+    pub fn layout(sel: Rect, width: i32, height: i32, scale: f64, palette: bool) -> Self {
+        let px = |v: f64| (v * scale).round() as i32;
+        let (button, pad, gap) = (px(30.0), px(3.0), px(6.0));
+
+        // Tools: a column right of the selection, bottom-aligned with it.
+        let tools_w = button + 2 * pad;
+        let tools_h = TOOLS.len() as i32 * button + 2 * pad;
+        let tools_x = if sel.right() + gap + tools_w <= width {
+            sel.right() + gap
+        } else if sel.x - gap - tools_w >= 0 {
+            sel.x - gap - tools_w
+        } else {
+            sel.right() - gap - tools_w
+        };
+        let tools_y = (sel.bottom() - tools_h).clamp(0, (height - tools_h).max(0));
+        let mut tools = Rect {
+            x: tools_x.max(0),
+            y: tools_y,
+            w: tools_w,
+            h: tools_h,
+        };
+
+        // Actions: a row below the selection, right-aligned with it.
+        let actions_w = ACTIONS.len() as i32 * button + 2 * pad;
+        let actions_h = button + 2 * pad;
+        let actions_y = if sel.bottom() + gap + actions_h <= height {
+            sel.bottom() + gap
+        } else if sel.y - gap - actions_h >= 0 {
+            sel.y - gap - actions_h
+        } else {
+            sel.bottom() - gap - actions_h
+        };
+        let actions_x = (sel.right() - actions_w).clamp(0, (width - actions_w).max(0));
+        let actions = Rect {
+            x: actions_x,
+            y: actions_y,
+            w: actions_w,
+            h: actions_h,
+        };
+
+        // When both panels end up inside the selection, lift the tools above the actions.
+        if overlaps(tools, actions) {
+            tools.y = (actions.y - gap - tools_h).max(0);
+        }
+
+        let mut buttons = Vec::new();
+        for (i, &b) in TOOLS.iter().enumerate() {
+            let r = Rect {
+                x: tools.x + pad,
+                y: tools.y + pad + i as i32 * button,
+                w: button,
+                h: button,
+            };
+            buttons.push((b, r));
+        }
+        for (i, &b) in ACTIONS.iter().enumerate() {
+            let r = Rect {
+                x: actions.x + pad + i as i32 * button,
+                y: actions.y + pad,
+                w: button,
+                h: button,
+            };
+            buttons.push((b, r));
+        }
+
+        let mut panels = vec![tools, actions];
+        let mut swatches = Vec::new();
+        if palette {
+            // Two rows of swatches next to the color button, on the side with room.
+            let swatch = px(24.0);
+            let cols = PALETTE.len() as i32 / 2;
+            let w = cols * swatch + 2 * pad;
+            let h = 2 * swatch + 2 * pad;
+            let color_button = buttons.iter().find(|(b, _)| *b == Button::Color).unwrap().1;
+            let x = if tools.x - gap - w >= 0 {
+                tools.x - gap - w
+            } else {
+                tools.right() + gap
+            };
+            let y = (color_button.y + color_button.h / 2 - h / 2).clamp(0, (height - h).max(0));
+            let panel = Rect { x, y, w, h };
+            for (i, &c) in PALETTE.iter().enumerate() {
+                let (col, row) = (i as i32 % cols, i as i32 / cols);
+                let r = Rect {
+                    x: x + pad + col * swatch,
+                    y: y + pad + row * swatch,
+                    w: swatch,
+                    h: swatch,
+                };
+                swatches.push((c, r));
+            }
+            panels.push(panel);
+        }
+
+        Self {
+            scale,
+            panels,
+            buttons,
+            swatches,
+        }
+    }
+
+    pub fn hit(&self, p: Point) -> Option<Target> {
+        if let Some((c, _)) = self.swatches.iter().find(|(_, r)| r.contains(p)) {
+            return Some(Target::Swatch(*c));
+        }
+        if let Some((b, _)) = self.buttons.iter().find(|(_, r)| r.contains(p)) {
+            return Some(Target::Button(*b));
+        }
+        self.panels
+            .iter()
+            .any(|r| r.contains(p))
+            .then_some(Target::Panel)
+    }
+
+    /// Draws the panels into a `0RGB` buffer `width` pixels wide.
+    pub fn draw(&self, buf: &mut [u32], width: i32, look: &Look) {
+        let s = self.scale as f32;
+        for (n, panel) in self.panels.iter().enumerate() {
+            let Some(mut pixmap) = Pixmap::new(panel.w as u32, panel.h as u32) else {
+                continue;
+            };
+            let local = |r: Rect| {
+                SkRect::from_xywh(
+                    (r.x - panel.x) as f32,
+                    (r.y - panel.y) as f32,
+                    r.w as f32,
+                    r.h as f32,
+                )
+            };
+            fill_round(
+                &mut pixmap,
+                local(Rect {
+                    x: panel.x,
+                    y: panel.y,
+                    ..*panel
+                }),
+                7.0 * s,
+                0x202024,
+                0.96,
+            );
+
+            if n == 2 {
+                for &(c, r) in &self.swatches {
+                    let inner = inset(local(r), 3.0 * s);
+                    let selected = c == look.color;
+                    let hovered = look.hover == Some(Target::Swatch(c));
+                    if selected || hovered {
+                        let ring = if selected { 0xFFFFFF } else { 0x70707A };
+                        fill_round(&mut pixmap, inset(local(r), 1.0 * s), 6.0 * s, ring, 1.0);
+                    }
+                    fill_round(&mut pixmap, inset(inner, 0.5 * s), 4.0 * s, c, 1.0);
+                }
+            } else {
+                for &(b, r) in self.buttons.iter().filter(|(_, r)| overlaps(*r, *panel)) {
+                    let active = matches!(b, Button::Tool(t) if Some(t) == look.tool);
+                    let hovered = look.hover == Some(Target::Button(b));
+                    if active {
+                        fill_round(&mut pixmap, inset(local(r), 1.5 * s), 5.0 * s, ACCENT, 1.0);
+                    } else if hovered {
+                        fill_round(
+                            &mut pixmap,
+                            inset(local(r), 1.5 * s),
+                            5.0 * s,
+                            0x3A3A42,
+                            1.0,
+                        );
+                    }
+                    // Icons are drawn on a 16 × 16 grid centered in the button.
+                    let size = 16.0 * s;
+                    let Some(at) = local(r) else { continue };
+                    let transform = Transform::from_scale(s, s).post_translate(
+                        at.x() + (at.width() - size) / 2.0,
+                        at.y() + (at.height() - size) / 2.0,
+                    );
+                    icon(&mut pixmap, b, look.color, transform);
+                }
+            }
+            render::blend_pixmap(buf, width, &pixmap, panel.x, panel.y);
+        }
+
+        if let Some(Target::Button(b)) = look.hover {
+            self.draw_tooltip(buf, width, b);
+        }
+    }
+
+    fn draw_tooltip(&self, buf: &mut [u32], width: i32, button: Button) {
+        let Some(&(_, r)) = self.buttons.iter().find(|(b, _)| *b == button) else {
+            return;
+        };
+        let height = buf.len() as i32 / width.max(1);
+        let s = self.scale as f32;
+        let text = button.tooltip();
+        let size = 12.5 * s;
+        let (tw, th) = font::measure(&text, size);
+        let (pad_x, pad_y) = (8.0 * s, 4.0 * s);
+        let (w, h) = (
+            (tw + 2.0 * pad_x).ceil() as i32,
+            (th + 2.0 * pad_y).ceil() as i32,
+        );
+        let gap = (6.0 * s) as i32;
+        let in_column = TOOLS.contains(&button);
+        let (x, y) = if in_column {
+            let left = r.x - (3.0 * s) as i32 - gap - w;
+            let x = if left >= 0 {
+                left
+            } else {
+                r.right() + (3.0 * s) as i32 + gap
+            };
+            (x, r.y + (r.h - h) / 2)
+        } else {
+            let below = r.bottom() + (3.0 * s) as i32 + gap;
+            let y = if below + h <= height {
+                below
+            } else {
+                r.y - (3.0 * s) as i32 - gap - h
+            };
+            (r.x + (r.w - w) / 2, y)
+        };
+        let x = x.clamp(0, (width - w).max(0));
+        let y = y.clamp(0, (height - h).max(0));
+        let Some(mut pixmap) = Pixmap::new(w as u32, h as u32) else {
+            return;
+        };
+        fill_round(
+            &mut pixmap,
+            SkRect::from_xywh(0.0, 0.0, w as f32, h as f32),
+            5.0 * s,
+            0x111113,
+            0.94,
+        );
+        font::draw(&mut pixmap, &text, pad_x, pad_y, size, 0xFFFFFF, 1.0);
+        render::blend_pixmap(buf, width, &pixmap, x, y);
+    }
+}
+
+fn overlaps(a: Rect, b: Rect) -> bool {
+    a.x < b.right() && b.x < a.right() && a.y < b.bottom() && b.y < a.bottom()
+}
+
+fn inset(r: Option<SkRect>, by: f32) -> Option<SkRect> {
+    let r = r?;
+    SkRect::from_ltrb(r.left() + by, r.top() + by, r.right() - by, r.bottom() - by)
+}
+
+/// Fills a rounded rectangle in `color` at `opacity`.
+pub fn fill_round(
+    pixmap: &mut Pixmap,
+    rect: Option<SkRect>,
+    radius: f32,
+    color: u32,
+    opacity: f32,
+) {
+    let Some(rect) = rect else { return };
+    let Some(path) = round_rect(rect, radius) else {
+        return;
+    };
+    let mut paint = Paint::default();
+    let [r, g, b] = rgb(color);
+    paint.set_color(Color::from_rgba8(r, g, b, (opacity * 255.0).round() as u8));
+    paint.anti_alias = true;
+    pixmap.fill_path(
+        &path,
+        &paint,
+        FillRule::Winding,
+        Transform::identity(),
+        None,
+    );
+}
+
+fn round_rect(r: SkRect, radius: f32) -> Option<tiny_skia::Path> {
+    let k = radius.min(r.width() / 2.0).min(r.height() / 2.0);
+    // Cubic approximation of a quarter circle.
+    let c = k * 0.4477;
+    let (l, t, rt, b) = (r.left(), r.top(), r.right(), r.bottom());
+    let mut p = PathBuilder::new();
+    p.move_to(l + k, t);
+    p.line_to(rt - k, t);
+    p.cubic_to(rt - c, t, rt, t + c, rt, t + k);
+    p.line_to(rt, b - k);
+    p.cubic_to(rt, b - c, rt - c, b, rt - k, b);
+    p.line_to(l + k, b);
+    p.cubic_to(l + c, b, l, b - c, l, b - k);
+    p.line_to(l, t + k);
+    p.cubic_to(l, t + c, l + c, t, l + k, t);
+    p.close();
+    p.finish()
+}
+
+/// Draws a button's icon on a 16 × 16 grid mapped through `transform`.
+fn icon(pixmap: &mut Pixmap, button: Button, color: u32, transform: Transform) {
+    let mut paint = Paint::default();
+    paint.set_color_rgba8(0xF4, 0xF4, 0xF6, 255);
+    paint.anti_alias = true;
+    let stroke = Stroke {
+        width: 1.6,
+        line_cap: LineCap::Round,
+        line_join: LineJoin::Round,
+        ..Stroke::default()
+    };
+    let mut p = PathBuilder::new();
+    match button {
+        Button::Tool(Tool::Pen) => {
+            p.move_to(2.5, 13.5);
+            p.line_to(3.3, 10.2);
+            p.line_to(11.0, 2.5);
+            p.line_to(13.5, 5.0);
+            p.line_to(5.8, 12.7);
+            p.close();
+            p.move_to(9.3, 4.2);
+            p.line_to(11.8, 6.7);
+        }
+        Button::Tool(Tool::Line) => {
+            p.move_to(3.0, 13.0);
+            p.line_to(13.0, 3.0);
+        }
+        Button::Tool(Tool::Arrow) => {
+            p.move_to(3.0, 13.0);
+            p.line_to(13.0, 3.0);
+            p.move_to(6.5, 3.0);
+            p.line_to(13.0, 3.0);
+            p.line_to(13.0, 9.5);
+        }
+        Button::Tool(Tool::Rect) => p.push_rect(SkRect::from_xywh(2.5, 3.5, 11.0, 9.0).unwrap()),
+        Button::Tool(Tool::Marker) => {
+            let mut wide = PathBuilder::new();
+            wide.move_to(4.0, 11.0);
+            wide.line_to(12.0, 3.0);
+            let mut faint = paint.clone();
+            faint.set_color_rgba8(0xF4, 0xF4, 0xF6, 110);
+            let thick = Stroke {
+                width: 5.0,
+                line_cap: LineCap::Square,
+                ..stroke.clone()
+            };
+            if let Some(path) = wide.finish() {
+                pixmap.stroke_path(&path, &faint, &thick, transform, None);
+            }
+            p.move_to(2.0, 14.0);
+            p.line_to(14.0, 14.0);
+        }
+        Button::Tool(Tool::Text) => {
+            p.move_to(3.0, 3.5);
+            p.line_to(13.0, 3.5);
+            p.move_to(8.0, 3.5);
+            p.line_to(8.0, 13.5);
+            p.move_to(6.0, 13.5);
+            p.line_to(10.0, 13.5);
+        }
+        Button::Color => {
+            let [r, g, b] = rgb(color);
+            let mut fill = paint.clone();
+            fill.set_color_rgba8(r, g, b, 255);
+            if let Some(dot) = PathBuilder::from_circle(8.0, 8.0, 5.5) {
+                pixmap.fill_path(&dot, &fill, FillRule::Winding, transform, None);
+            }
+            p.push_circle(8.0, 8.0, 6.3);
+        }
+        Button::Undo => {
+            p.move_to(5.5, 3.5);
+            p.line_to(2.5, 6.5);
+            p.line_to(5.5, 9.5);
+            p.move_to(2.5, 6.5);
+            p.line_to(10.0, 6.5);
+            p.cubic_to(12.5, 6.5, 13.8, 8.2, 13.8, 10.1);
+            p.cubic_to(13.8, 12.0, 12.5, 13.5, 10.0, 13.5);
+            p.line_to(7.0, 13.5);
+        }
+        Button::Close => {
+            p.move_to(4.0, 4.0);
+            p.line_to(12.0, 12.0);
+            p.move_to(12.0, 4.0);
+            p.line_to(4.0, 12.0);
+        }
+        Button::Search => {
+            p.push_circle(7.0, 7.0, 4.5);
+            p.move_to(10.3, 10.3);
+            p.line_to(13.8, 13.8);
+        }
+        Button::Print => {
+            p.move_to(4.5, 6.0);
+            p.line_to(4.5, 2.5);
+            p.line_to(11.5, 2.5);
+            p.line_to(11.5, 6.0);
+            p.move_to(4.5, 11.5);
+            p.line_to(2.5, 11.5);
+            p.line_to(2.5, 6.0);
+            p.line_to(13.5, 6.0);
+            p.line_to(13.5, 11.5);
+            p.line_to(11.5, 11.5);
+            p.push_rect(SkRect::from_xywh(4.5, 9.0, 7.0, 5.0).unwrap());
+        }
+        Button::Copy => {
+            p.push_rect(SkRect::from_xywh(5.5, 5.5, 8.0, 8.5).unwrap());
+            p.move_to(10.5, 2.5);
+            p.line_to(2.5, 2.5);
+            p.line_to(2.5, 11.0);
+        }
+        Button::Save => {
+            p.move_to(8.0, 2.0);
+            p.line_to(8.0, 10.5);
+            p.move_to(4.5, 7.0);
+            p.line_to(8.0, 10.5);
+            p.line_to(11.5, 7.0);
+            p.move_to(2.5, 13.5);
+            p.line_to(13.5, 13.5);
+        }
+    }
+    if let Some(path) = p.finish() {
+        pixmap.stroke_path(&path, &paint, &stroke, transform, None);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sel(x: i32, y: i32, w: i32, h: i32) -> Rect {
+        Rect { x, y, w, h }
+    }
+
+    #[test]
+    fn panels_sit_outside_the_selection_when_there_is_room() {
+        let bar = Toolbar::layout(sel(100, 100, 400, 400), 1920, 1080, 1.0, false);
+        let (tools, actions) = (bar.panels[0], bar.panels[1]);
+        assert!(tools.x >= 500 && tools.bottom() == 500);
+        assert!(actions.y >= 500 && actions.right() == 500);
+        assert_eq!(
+            bar.hit(Point::new(tools.x + 5, tools.y + 5)),
+            Some(Target::Button(Button::Tool(Tool::Pen)))
+        );
+    }
+
+    #[test]
+    fn panels_move_inside_a_full_screen_selection_without_overlapping() {
+        let bar = Toolbar::layout(sel(0, 0, 1920, 1080), 1920, 1080, 2.0, true);
+        let screen = sel(0, 0, 1920, 1080);
+        for panel in &bar.panels {
+            assert!(
+                panel.x >= 0 && panel.y >= 0 && panel.right() <= 1920 && panel.bottom() <= 1080
+            );
+            assert!(overlaps(*panel, screen));
+        }
+        assert!(!overlaps(bar.panels[0], bar.panels[1]));
+        assert_eq!(bar.swatches.len(), PALETTE.len());
+    }
+
+    #[test]
+    fn toolbars_draw_into_the_buffer() {
+        let bar = Toolbar::layout(sel(50, 50, 200, 200), 600, 500, 1.0, true);
+        let mut buf = vec![0xFFFFFFu32; 600 * 500];
+        let look = Look {
+            tool: Some(Tool::Arrow),
+            color: PALETTE[0],
+            hover: Some(Target::Button(Button::Save)),
+        };
+        bar.draw(&mut buf, 600, &look);
+        let tools = bar.panels[0];
+        let middle = buf[((tools.y + tools.h / 2) * 600 + tools.x + 2) as usize];
+        assert!(
+            middle & 0xFF < 0x40,
+            "the panel background is dark, got {middle:06X}"
+        );
+    }
+}
