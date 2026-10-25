@@ -29,10 +29,51 @@ impl Format {
     }
 }
 
+/// How a picked color goes to the clipboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorFormat {
+    /// `#1E90FF`
+    Hex,
+    /// `rgb(30, 144, 255)`
+    Rgb,
+}
+
+impl ColorFormat {
+    pub fn format(self, color: u32) -> String {
+        let [r, g, b] = crate::paint::rgb(color);
+        match self {
+            ColorFormat::Hex => format!("#{:06X}", color & 0xFFFFFF),
+            ColorFormat::Rgb => format!("rgb({r}, {g}, {b})"),
+        }
+    }
+}
+
+/// The two global shortcuts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shortcut {
+    Capture,
+    /// The color picker.
+    Pick,
+}
+
+impl Shortcut {
+    pub const ALL: [Shortcut; 2] = [Shortcut::Capture, Shortcut::Pick];
+
+    pub fn default_keys(self) -> &'static str {
+        match self {
+            Shortcut::Capture => DEFAULT_HOTKEY,
+            Shortcut::Pick => DEFAULT_PICK_HOTKEY,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     /// The capture shortcut, as `global_hotkey` parses it, e.g. `Ctrl+Shift+S`.
     pub hotkey: String,
+    /// The color picker's shortcut.
+    pub pick_hotkey: String,
+    pub color_format: ColorFormat,
     pub folder: PathBuf,
     pub format: Format,
     /// Save straight into `folder` instead of asking where.
@@ -47,18 +88,28 @@ pub struct Settings {
     pub color: u32,
     pub stroke: f32,
     pub text_size: f32,
+    /// How many recent screenshots the tray menu keeps; 0 turns the history off.
+    pub history: usize,
+    /// The name of saved files, in `strftime` syntax, without the extension.
+    pub file_name: String,
 }
+
+/// The file name template used when none is set: `Snapt_2026-03-07_09-05-02`.
+pub const DEFAULT_FILE_NAME: &str = "Snapt_%Y-%m-%d_%H-%M-%S";
 
 /// Macs have no PrtSc key; LightShot for Mac uses Cmd+Shift+9.
 #[cfg(target_os = "macos")]
 pub const DEFAULT_HOTKEY: &str = "Cmd+Shift+9";
 #[cfg(not(target_os = "macos"))]
 pub const DEFAULT_HOTKEY: &str = "PrintScreen";
+pub const DEFAULT_PICK_HOTKEY: &str = "Ctrl+Alt+C";
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             hotkey: DEFAULT_HOTKEY.into(),
+            pick_hotkey: DEFAULT_PICK_HOTKEY.into(),
+            color_format: ColorFormat::Hex,
             folder: default_folder(),
             format: Format::Png,
             quick_save: false,
@@ -69,6 +120,8 @@ impl Default for Settings {
             color: 0xFF3B30,
             stroke: 3.0,
             text_size: 20.0,
+            history: crate::history::DEFAULT_LIMIT,
+            file_name: DEFAULT_FILE_NAME.into(),
         }
     }
 }
@@ -77,6 +130,20 @@ impl Settings {
     /// The language the interface shows.
     pub fn lang(&self) -> Lang {
         self.language.unwrap_or_else(Lang::system)
+    }
+
+    pub fn shortcut(&self, which: Shortcut) -> &str {
+        match which {
+            Shortcut::Capture => &self.hotkey,
+            Shortcut::Pick => &self.pick_hotkey,
+        }
+    }
+
+    pub fn shortcut_mut(&mut self, which: Shortcut) -> &mut String {
+        match which {
+            Shortcut::Capture => &mut self.hotkey,
+            Shortcut::Pick => &mut self.pick_hotkey,
+        }
     }
 
     pub fn path() -> Option<PathBuf> {
@@ -117,6 +184,13 @@ impl Settings {
             let value = value.trim();
             match key.trim() {
                 "hotkey" if !value.is_empty() => s.hotkey = value.into(),
+                "pick_hotkey" if !value.is_empty() => s.pick_hotkey = value.into(),
+                "color_format" => {
+                    s.color_format = match value.to_ascii_lowercase().as_str() {
+                        "rgb" => ColorFormat::Rgb,
+                        _ => ColorFormat::Hex,
+                    }
+                }
                 "folder" if !value.is_empty() => s.folder = PathBuf::from(value),
                 "format" => {
                     s.format = match value.to_ascii_lowercase().as_str() {
@@ -136,6 +210,8 @@ impl Settings {
                 }
                 "stroke" => s.stroke = value.parse().unwrap_or(s.stroke).clamp(1.0, 30.0),
                 "text_size" => s.text_size = value.parse().unwrap_or(s.text_size).clamp(10.0, 96.0),
+                "history" => s.history = value.parse().unwrap_or(s.history).min(50),
+                "file_name" if !value.is_empty() => s.file_name = value.into(),
                 _ => {}
             }
         }
@@ -149,6 +225,12 @@ impl Settings {
             "# hotkey examples: PrintScreen, Ctrl+Shift+S, Cmd+Shift+9"
         );
         let _ = writeln!(t, "hotkey = {}", self.hotkey);
+        let _ = writeln!(t, "pick_hotkey = {}", self.pick_hotkey);
+        let format = match self.color_format {
+            ColorFormat::Hex => "hex",
+            ColorFormat::Rgb => "rgb",
+        };
+        let _ = writeln!(t, "color_format = {format}");
         let _ = writeln!(t, "folder = {}", self.folder.display());
         let _ = writeln!(t, "format = {}", self.format.extension());
         let _ = writeln!(t, "quick_save = {}", self.quick_save);
@@ -160,6 +242,13 @@ impl Settings {
         let _ = writeln!(t, "color = #{:06X}", self.color);
         let _ = writeln!(t, "stroke = {}", self.stroke);
         let _ = writeln!(t, "text_size = {}", self.text_size);
+        let _ = writeln!(t, "# recent screenshots in the tray menu, 0 to keep none");
+        let _ = writeln!(t, "history = {}", self.history);
+        let _ = writeln!(
+            t,
+            "# saved file names: %Y year, %m month, %d day, %H hour, %M minute, %S second"
+        );
+        let _ = writeln!(t, "file_name = {}", self.file_name);
         t
     }
 }
@@ -290,6 +379,8 @@ mod tests {
     fn settings_survive_a_round_trip() {
         let s = Settings {
             hotkey: "Ctrl+Shift+S".into(),
+            pick_hotkey: "Alt+P".into(),
+            color_format: ColorFormat::Rgb,
             folder: PathBuf::from("/tmp/shots"),
             format: Format::Jpeg,
             quick_save: true,
@@ -300,6 +391,8 @@ mod tests {
             color: 0x00FF7F,
             stroke: 5.0,
             text_size: 28.0,
+            history: 0,
+            file_name: "shot %d.%m.%Y".into(),
         };
         assert_eq!(Settings::parse(&s.to_text()), s);
     }
@@ -311,11 +404,20 @@ mod tests {
     }
 
     #[test]
-    fn the_default_hotkey_parses() {
-        assert!(
-            DEFAULT_HOTKEY
-                .parse::<global_hotkey::hotkey::HotKey>()
-                .is_ok()
-        );
+    fn the_default_hotkeys_parse() {
+        for which in Shortcut::ALL {
+            assert!(
+                which
+                    .default_keys()
+                    .parse::<global_hotkey::hotkey::HotKey>()
+                    .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn colors_format_as_hex_or_rgb() {
+        assert_eq!(ColorFormat::Hex.format(0x1E90FF), "#1E90FF");
+        assert_eq!(ColorFormat::Rgb.format(0x1E90FF), "rgb(30, 144, 255)");
     }
 }

@@ -27,12 +27,20 @@ No accounts, no cloud, a few megabytes on disk.
 
 ## Features
 
-- Select an area on any monitor, HiDPI aware, with handles to move and resize it.
-- Draw on it: pen, line, arrow, rectangle, marker and text, in any color, or one picked
-  from the screen with the eyedropper.
+- Select an area on any monitor, or a whole window with one click, HiDPI aware, with
+  handles to move and resize it and a magnifier for pixel-exact edges.
+- Draw on it: pen, line, arrow, rectangle, ellipse, marker, text and numbered steps, in
+  any color, or one picked from the screen with the eyedropper. Pixelate what should stay
+  private. Click a shape to move it, or delete it with `Delete`.
+- A color picker on its own shortcut (`Ctrl+Alt+C`) or in the tray: a magnifier shows the
+  pixels under the cursor and a click copies the color as HEX or RGB.
 - Copy the text in the selection, recognized by the system's own OCR (English, Russian,
   Ukrainian and more).
 - Copy it, save it as PNG or JPEG, print it, or search Google Lens for similar images.
+- Pin it on top of all windows to keep it in sight while you work, as in Snipaste.
+- Scrolling screenshots (experimental): scroll a long page and Snapt glues it into one image.
+- From the tray: copy the full screen in one click, take a screenshot after 3, 5 or 10
+  seconds, select the last area again, and reopen your recent screenshots.
 - A settings window for the capture shortcut, screenshots folder, image format and start at
   login, and an option to replace the system screenshot tool.
 - In English, Russian and Ukrainian, and it updates itself from GitHub Releases.
@@ -58,9 +66,11 @@ The screen freezes, then:
 | Action | How |
 | --- | --- |
 | Select an area | Drag with the left mouse button |
+| Select a window | Point at it and click |
 | Move or resize it | Drag inside the selection or by its handles |
 | Select the whole screen | `Ctrl+A` |
-| Pick a drawing tool | Click it in the panel, or press `P` pen, `L` line, `A` arrow, `R` rectangle, `M` marker, `T` text |
+| Pick a drawing tool | Click it in the panel, or press `P` pen, `L` line, `A` arrow, `R` rectangle, `E` ellipse, `M` marker, `T` text, `N` numbered step, `B` pixelate |
+| Move or delete a shape | With no tool picked, drag it, or click it and press `Delete` |
 | Straight lines, squares | Hold `Shift` while drawing |
 | Line width, text size | Mouse wheel |
 | Undo, redo | `Ctrl+Z`, `Ctrl+Y` or `Ctrl+Shift+Z` |
@@ -69,11 +79,30 @@ The screen freezes, then:
 | Print | `Ctrl+P` |
 | Search for similar images | `Ctrl+F` |
 | Copy the text in it | `Ctrl+Shift+C` |
+| Pin it on top of all windows | `F3` |
+| Scrolling screenshot (experimental) | `Ctrl+Shift+S`, then scroll the page down |
 | Pick a color from the screen | `I`, then click; the HEX code is copied too |
 | Cancel | `Esc` or right-click |
 
 On macOS, use `Cmd` instead of `Ctrl`. While typing text, `Enter` starts a new line and
 `Esc` finishes the text.
+
+A pinned screenshot stays on top of other windows. Drag it to move it, zoom it with the mouse
+wheel or `+` and `-` (`0` goes back to 100 %), copy it again with `Ctrl+C`, save it with
+`Ctrl+S`, and close it with `Esc`, a double click or the middle mouse button.
+
+For a scrolling screenshot, select the visible part of the page and press `Ctrl+Shift+S` or
+the scroll button, then scroll down at an even pace. A panel shows the height so far; press
+`Enter` or click it when done (`Esc` cancels). The result is copied and pinned so you can
+check it and save it with `Ctrl+S`. It is experimental: sticky headers and animations can
+confuse the gluing.
+
+The tray menu also has:
+
+- **Copy full screen**: all monitors at once, straight to the clipboard;
+- **Repeat last area**: opens the screenshot with the area you selected last time;
+- **Screenshot with delay**: in 3, 5 or 10 seconds, to catch menus and tooltips;
+- **Recent screenshots**: the last 10, kept between restarts; click one to pin it.
 
 ### Settings
 
@@ -90,11 +119,16 @@ Pick **Settings…** in the tray menu. There you can:
   tray and in the window. The Windows installer, the macOS app and the AppImage update
   themselves; for the `.deb`, the download page opens.
 
-The settings are stored in a plain-text `settings.ini` in the config folder.
+The settings are stored in a plain-text `settings.ini` in the config folder. Two more
+settings live only there: `history` sets how many recent screenshots to keep (0 keeps none),
+and `file_name` sets how saved files are named, with `strftime` codes such as `%Y` year,
+`%m` month, `%d` day, `%H` hour, `%M` minute and `%S` second. The default is
+`Snapt_%Y-%m-%d_%H-%M-%S`.
 
 ### Command line
 
-`snapt --capture` takes a screenshot right away and `snapt --settings` opens the settings.
+`snapt --capture` takes a screenshot right away, `snapt --pick` opens the color picker and
+`snapt --settings` opens the settings.
 If Snapt is already running, that copy does it, so the command can be bound to a key in the
 system settings, for example on Wayland desktops without a global shortcuts portal.
 

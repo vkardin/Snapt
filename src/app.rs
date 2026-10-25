@@ -3,6 +3,7 @@ use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey:
 use tray_icon::menu::MenuEvent;
 use winit::{
     application::ApplicationHandler,
+    dpi::{PhysicalPosition, PhysicalSize},
     event::{StartCause, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy},
     window::WindowId,
@@ -10,11 +11,15 @@ use winit::{
 
 use crate::{
     capture,
+    history::History,
     i18n::{self, T, t},
+    instance::Request,
     ocr, output,
-    overlay::{Outcome, Overlay, Style},
+    overlay::{Area, Outcome, Overlay, Style},
+    pin::{Pin, PinAction},
     platform,
-    settings::{self, DEFAULT_HOTKEY, Settings},
+    scroll::{Scroll, ScrollAction},
+    settings::{self, Settings, Shortcut},
     settings_window::{Action, Notice, SettingsWindow, UpdateStatus},
     tray::{Command, Tray},
     updater::{self, Update},
@@ -25,40 +30,19 @@ use crate::{
 pub enum UserEvent {
     Menu(MenuEvent),
     Hotkey(GlobalHotKeyEvent),
-    /// Another copy of Snapt was started and asks for a screenshot.
-    Capture,
-    /// Another copy of Snapt was started with `--settings`.
-    Settings,
+    /// Another copy of Snapt was started and asks for something.
+    Request(Request),
     /// An update check finished; the flag tells whether the user asked for it.
     UpdateChecked(Result<Option<Update>, String>, bool),
     /// The installer of an update was downloaded.
     UpdateDownloaded(Result<std::path::PathBuf, String>),
+    /// Text recognition on a selection finished.
+    Recognized(Result<String, ocr::Error>),
+    /// The scrolling screenshot grew.
+    ScrollGrew,
     /// The desktop portal answered a request for the capture shortcut.
     #[cfg(target_os = "linux")]
     PortalShortcut(String, Result<crate::portal::Shortcut, String>),
-    /// Text recognition on a selection finished.
-    Recognized(Result<String, ocr::Error>),
-}
-
-pub struct App {
-    // The manager unregisters its hotkeys when dropped, so it must live as long as the app.
-    hotkeys: GlobalHotKeyManager,
-    capture_hotkey: Option<HotKey>,
-    tray: Option<Tray>,
-    overlay: Option<Overlay>,
-    settings_window: Option<SettingsWindow>,
-    settings: Settings,
-    style: Style,
-    capture_now: bool,
-    settings_now: bool,
-    output: output::Output,
-    proxy: EventLoopProxy<UserEvent>,
-    update: Option<Update>,
-    update_status: UpdateStatus,
-    watching_updates: bool,
-    /// The capture shortcut on Wayland, bound through the desktop portal.
-    #[cfg(target_os = "linux")]
-    portal: Portal,
 }
 
 /// The state of the portal shortcut.
@@ -72,14 +56,35 @@ struct Portal {
     failed: bool,
 }
 
+pub struct App {
+    // The manager unregisters its hotkeys when dropped, so it must live as long as the app.
+    hotkeys: GlobalHotKeyManager,
+    /// The registered shortcuts, by [`Shortcut`].
+    registered: [Option<HotKey>; 2],
+    tray: Option<Tray>,
+    overlay: Option<Overlay>,
+    pins: Vec<Pin>,
+    scroll: Option<Scroll>,
+    history: History,
+    /// The area selected last time, for "Repeat last area".
+    last_area: Option<Area>,
+    settings_window: Option<SettingsWindow>,
+    settings: Settings,
+    style: Style,
+    /// What to open as soon as the app starts.
+    start: Option<Request>,
+    output: output::Output,
+    proxy: EventLoopProxy<UserEvent>,
+    update: Option<Update>,
+    update_status: UpdateStatus,
+    watching_updates: bool,
+    /// The capture shortcut on Wayland, bound through the desktop portal.
+    #[cfg(target_os = "linux")]
+    portal: Portal,
+}
+
 impl App {
-    /// `capture_now` opens the overlay as soon as the app starts, `settings_now`
-    /// the settings window.
-    pub fn new(
-        capture_now: bool,
-        settings_now: bool,
-        proxy: EventLoopProxy<UserEvent>,
-    ) -> Result<Self> {
+    pub fn new(start: Option<Request>, proxy: EventLoopProxy<UserEvent>) -> Result<Self> {
         let hotkeys = GlobalHotKeyManager::new().context("failed to start the hotkey manager")?;
         let settings = Settings::load();
         i18n::set(settings.lang());
@@ -91,14 +96,17 @@ impl App {
         };
         let mut app = Self {
             hotkeys,
-            capture_hotkey: None,
+            registered: [None, None],
             tray: None,
             overlay: None,
+            pins: Vec::new(),
+            scroll: None,
+            history: History::load(settings.history),
+            last_area: None,
             settings_window: None,
             settings,
             style,
-            capture_now,
-            settings_now,
+            start,
             output: output::Output::new()?,
             proxy,
             update: None,
@@ -107,41 +115,38 @@ impl App {
             #[cfg(target_os = "linux")]
             portal: Portal::default(),
         };
-        app.register_hotkey();
+        app.register_hotkeys();
         if app.settings.auto_update {
             app.watch_updates();
         }
         Ok(app)
     }
 
-    /// (Re)registers the capture shortcut from the settings. Returns false when
-    /// the shortcut is invalid or another app owns it; Snapt then still works
-    /// from the tray menu.
-    fn register_hotkey(&mut self) -> bool {
+    /// (Re)registers one shortcut from the settings. Returns false when the
+    /// shortcut is invalid or another app owns it; Snapt then still works from
+    /// the tray menu.
+    fn register_hotkey(&mut self, which: Shortcut) -> bool {
         #[cfg(target_os = "linux")]
-        if platform::is_wayland() && !self.portal.failed {
+        if which == Shortcut::Capture && platform::is_wayland() && !self.portal.failed {
             self.bind_portal_shortcut();
             return true;
         }
-        self.register_global_hotkey()
-    }
-
-    fn register_global_hotkey(&mut self) -> bool {
-        self.unregister_hotkey();
-        let hotkey: HotKey = match self.settings.hotkey.parse() {
+        self.unregister_hotkey(which);
+        let keys = self.settings.shortcut(which).to_string();
+        let hotkey: HotKey = match keys.parse() {
             Ok(hotkey) => hotkey,
             Err(err) => {
-                log::warn!("bad capture shortcut {:?}: {err}", self.settings.hotkey);
+                log::warn!("bad shortcut {keys:?}: {err}");
                 return false;
             }
         };
         match self.hotkeys.register(hotkey) {
             Ok(()) => {
-                self.capture_hotkey = Some(hotkey);
+                self.registered[which as usize] = Some(hotkey);
                 true
             }
             Err(err) => {
-                log::warn!("could not register {}: {err}", self.settings.hotkey);
+                log::warn!("could not register {keys}: {err}");
                 false
             }
         }
@@ -152,7 +157,7 @@ impl App {
     /// [`UserEvent::PortalShortcut`].
     #[cfg(target_os = "linux")]
     fn bind_portal_shortcut(&mut self) {
-        let hotkey = self.settings.hotkey.clone();
+        let hotkey = self.settings.shortcut(Shortcut::Capture).to_string();
         let current = self.portal.shortcut.as_ref().map(|s| &s.trigger);
         if current == Some(&hotkey) || self.portal.pending.as_ref() == Some(&hotkey) {
             return;
@@ -164,7 +169,11 @@ impl App {
         let description = i18n::t(i18n::T::TakeScreenshot).to_string();
         std::thread::spawn(move || {
             let events = proxy.clone();
-            let pressed = move || events.send_event(UserEvent::Capture).is_ok();
+            let pressed = move || {
+                events
+                    .send_event(UserEvent::Request(Request::Capture))
+                    .is_ok()
+            };
             let result = crate::portal::Shortcut::bind(&hotkey, &description, pressed)
                 .map_err(|e| format!("{e:#}"));
             let _ = proxy.send_event(UserEvent::PortalShortcut(hotkey, result));
@@ -186,13 +195,19 @@ impl App {
                      bind `snapt --capture` to a key in the system settings"
                 );
                 self.portal.failed = true;
-                self.register_global_hotkey();
+                self.register_hotkey(Shortcut::Capture);
             }
         }
     }
 
-    fn unregister_hotkey(&mut self) {
-        if let Some(old) = self.capture_hotkey.take() {
+    fn register_hotkeys(&mut self) {
+        for which in Shortcut::ALL {
+            self.register_hotkey(which);
+        }
+    }
+
+    fn unregister_hotkey(&mut self, which: Shortcut) {
+        if let Some(old) = self.registered[which as usize].take() {
             let _ = self.hotkeys.unregister(old);
         }
     }
@@ -206,26 +221,34 @@ impl App {
         }
     }
 
-    /// Freezes the screens and opens the selection overlay.
-    fn start_capture(&mut self, event_loop: &ActiveEventLoop) {
+    /// Freezes the screens and opens the selection overlay, with `area`
+    /// already selected when given, or with `pick` only the color picker.
+    fn start_capture(&mut self, event_loop: &ActiveEventLoop, area: Option<Area>, pick: bool) {
         if self.overlay.is_some() {
             return;
         }
         if !platform::screen_access() {
             return;
         }
-        let result =
-            capture::all_monitors().and_then(|shots| Overlay::open(event_loop, shots, self.style));
+        let format = self.settings.color_format;
+        let result = capture::all_monitors()
+            .and_then(|shots| Overlay::open(event_loop, shots, self.style, area, pick, format));
         match result {
             Ok(overlay) => self.overlay = Some(overlay),
             Err(err) => log::error!("screenshot failed: {err:#}"),
         }
     }
 
-    fn finish_capture(&mut self, outcome: Outcome) {
+    fn finish_capture(&mut self, event_loop: &ActiveEventLoop, outcome: Outcome) {
         // Close the overlay first so it is not in the way of the save dialog.
         if let Some(overlay) = self.overlay.take() {
             self.style = overlay.style();
+            if let Some(area) = overlay.area() {
+                self.last_area = Some(area);
+                if let Some(tray) = &self.tray {
+                    tray.set_can_repeat(true);
+                }
+            }
         }
         let (color, stroke, text_size) =
             (self.style.color, self.style.stroke, self.style.text_size);
@@ -238,26 +261,40 @@ impl App {
         self.settings.stroke = stroke;
         self.settings.text_size = text_size;
 
-        let result = match outcome {
+        let result = match &outcome {
             Outcome::Cancel => Ok(()),
-            Outcome::Copy(shot) => self.output.copy(&shot).map(|()| {
-                log::info!("copied {}×{} to the clipboard", shot.width(), shot.height());
-            }),
+            Outcome::Copy(shot) => self.copy(shot),
             Outcome::Save(shot) => {
-                let folder = self.settings.folder.clone();
-                let saved = self.output.save(&shot, &mut self.settings);
-                changed |= folder != self.settings.folder;
-                saved.map(|path| {
-                    if let Some(path) = path {
-                        log::info!("saved {}", path.display());
-                    }
-                })
+                changed |= self.save(shot);
+                Ok(())
             }
-            Outcome::Print(shot) => self.output.print(&shot),
-            Outcome::Search(shot) => self.output.search(&shot),
+            Outcome::Print(shot) => self.output.print(shot),
+            Outcome::Search(shot) => self.output.search(shot),
+            Outcome::Pin { .. } | Outcome::Scroll { .. } => Ok(()),
         };
         if let Err(err) = result {
             log::error!("{err:#}");
+        }
+        match outcome {
+            Outcome::Cancel => {}
+            Outcome::Copy(shot)
+            | Outcome::Save(shot)
+            | Outcome::Print(shot)
+            | Outcome::Search(shot) => self.remember(&shot),
+            Outcome::Pin {
+                image,
+                position,
+                size,
+            } => {
+                self.remember(&image);
+                self.pin(event_loop, image, position, size);
+            }
+            Outcome::Scroll { region, panel } => {
+                match Scroll::start(event_loop, self.proxy.clone(), region, panel) {
+                    Ok(scroll) => self.scroll = Some(scroll),
+                    Err(err) => log::error!("{err:#}"),
+                }
+            }
         }
         if changed {
             self.save_settings();
@@ -265,7 +302,7 @@ impl App {
     }
 
     /// Copies recognized text and closes the overlay, or says in it why there is none.
-    fn recognized(&mut self, result: Result<String, ocr::Error>) {
+    fn recognized(&mut self, event_loop: &ActiveEventLoop, result: Result<String, ocr::Error>) {
         let status = match result {
             Ok(text) if !text.is_empty() => {
                 match self.output.copy_text(&text) {
@@ -273,7 +310,7 @@ impl App {
                     Err(err) => log::error!("{err:#}"),
                 }
                 if self.overlay.is_some() {
-                    self.finish_capture(Outcome::Cancel);
+                    self.finish_capture(event_loop, Outcome::Cancel);
                 }
                 return;
             }
@@ -289,9 +326,139 @@ impl App {
         }
     }
 
+    fn copy(&mut self, shot: &image::RgbaImage) -> Result<()> {
+        self.output.copy(shot).map(|()| {
+            log::info!("copied {}×{} to the clipboard", shot.width(), shot.height());
+        })
+    }
+
+    /// Saves `shot`; returns whether the settings changed (the folder picked becomes the default).
+    fn save(&mut self, shot: &image::RgbaImage) -> bool {
+        let folder = self.settings.folder.clone();
+        match self.output.save(shot, &mut self.settings) {
+            Ok(Some(path)) => log::info!("saved {}", path.display()),
+            Ok(None) => {}
+            Err(err) => log::error!("{err:#}"),
+        }
+        folder != self.settings.folder
+    }
+
+    /// Adds `shot` to the history and the tray menu.
+    fn remember(&mut self, shot: &image::RgbaImage) {
+        self.history.add(shot);
+        if let Some(tray) = &mut self.tray {
+            tray.set_history(self.history.entries());
+        }
+    }
+
+    /// Copies all screens at once, without the overlay.
+    fn copy_full_screen(&mut self) {
+        if !platform::screen_access() {
+            return;
+        }
+        match capture::all_monitors() {
+            Ok(shots) => {
+                let shot = capture::stitch(&shots);
+                if let Err(err) = self.copy(&shot) {
+                    log::error!("{err:#}");
+                }
+                self.remember(&shot);
+            }
+            Err(err) => log::error!("screenshot failed: {err:#}"),
+        }
+    }
+
+    /// Opens the overlay after `seconds`, so menus and tooltips can be opened meanwhile.
+    fn capture_later(&self, seconds: u64) {
+        let proxy = self.proxy.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(seconds));
+            let _ = proxy.send_event(UserEvent::Request(Request::Capture));
+        });
+    }
+
+    /// Pins a screenshot from the history in the middle of the main screen.
+    fn pin_from_history(&mut self, event_loop: &ActiveEventLoop, index: usize) {
+        let image = match self.history.open(index) {
+            Ok(image) => image,
+            Err(err) => {
+                log::error!("{err:#}");
+                return;
+            }
+        };
+        let (position, size) = centered(event_loop, image.dimensions());
+        self.pin(event_loop, image, position, size);
+    }
+
+    fn pin(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        image: image::RgbaImage,
+        position: PhysicalPosition<i32>,
+        size: PhysicalSize<u32>,
+    ) {
+        match Pin::open(event_loop, image, position, size) {
+            Ok(pin) => self.pins.push(pin),
+            Err(err) => log::error!("{err:#}"),
+        }
+    }
+
+    /// Copies the finished scrolling screenshot and pins it to look it over.
+    fn finish_scroll(&mut self, event_loop: &ActiveEventLoop) {
+        let Some(image) = self.scroll.take().and_then(Scroll::finish) else {
+            return;
+        };
+        if let Err(err) = self.copy(&image) {
+            log::error!("{err:#}");
+        }
+        self.remember(&image);
+        let (position, size) = centered(event_loop, image.dimensions());
+        self.pin(event_loop, image, position, size);
+    }
+
+    fn pin_event(&mut self, index: usize, event: WindowEvent) {
+        let Some(action) = self.pins[index].window_event(event) else {
+            return;
+        };
+        match action {
+            PinAction::Close => {
+                self.pins.remove(index);
+            }
+            PinAction::Copy(shot) => {
+                if let Err(err) = self.copy(&shot) {
+                    log::error!("{err:#}");
+                }
+            }
+            PinAction::Save(shot) => {
+                if self.save(&shot) {
+                    self.save_settings();
+                }
+            }
+        }
+    }
+
+    fn request(&mut self, event_loop: &ActiveEventLoop, request: Request) {
+        match request {
+            Request::Capture => self.start_capture(event_loop, None, false),
+            Request::Pick => self.start_capture(event_loop, None, true),
+            Request::Settings => self.open_settings(event_loop),
+        }
+    }
+
     fn run_command(&mut self, event_loop: &ActiveEventLoop, command: Command) {
         match command {
-            Command::Capture => self.start_capture(event_loop),
+            Command::Capture => self.start_capture(event_loop, None, false),
+            Command::PickColor => self.start_capture(event_loop, None, true),
+            Command::FullScreen => self.copy_full_screen(),
+            Command::RepeatArea => self.start_capture(event_loop, self.last_area, false),
+            Command::Delay(seconds) => self.capture_later(seconds),
+            Command::History(index) => self.pin_from_history(event_loop, index),
+            Command::ClearHistory => {
+                self.history.clear();
+                if let Some(tray) = &mut self.tray {
+                    tray.set_history(self.history.entries());
+                }
+            }
             Command::OpenFolder => self.open_folder(),
             Command::Settings => self.open_settings(event_loop),
             Command::Update => self.start_update(),
@@ -311,7 +478,11 @@ impl App {
         self.tray = None;
         let version = self.update.as_ref().map(|u| u.version.as_str());
         match Tray::new(&self.settings, version) {
-            Ok(tray) => self.tray = Some(tray),
+            Ok(mut tray) => {
+                tray.set_history(self.history.entries());
+                tray.set_can_repeat(self.last_area.is_some());
+                self.tray = Some(tray);
+            }
             Err(err) => log::error!("failed to create the tray icon: {err:#}"),
         }
     }
@@ -370,7 +541,7 @@ impl App {
             Action::Close => {
                 // The window is hidden, not destroyed; free its memory anyway.
                 self.settings_window = None;
-                self.register_hotkey();
+                self.register_hotkeys();
                 return;
             }
             Action::Language(lang) => {
@@ -395,7 +566,7 @@ impl App {
                     Ok(()) => {
                         self.settings.replace_system = on;
                         // The system tool may have held the key until now.
-                        self.register_hotkey();
+                        self.register_hotkey(Shortcut::Capture);
                     }
                     Err(err) => {
                         log::error!("failed to replace the system screenshot tool: {err:#}");
@@ -403,13 +574,18 @@ impl App {
                     }
                 }
             }
-            // While the field listens, the current shortcut must not fire.
-            Action::Recording(true) => self.unregister_hotkey(),
-            Action::Recording(false) => {
-                self.register_hotkey();
+            // While a field listens, the current shortcuts must not fire.
+            Action::Recording(true) => {
+                for which in Shortcut::ALL {
+                    self.unregister_hotkey(which);
+                }
             }
-            Action::Hotkey(hotkey) => notice = self.set_hotkey(hotkey),
-            Action::ResetHotkey => notice = self.set_hotkey(DEFAULT_HOTKEY.into()),
+            Action::Recording(false) => self.register_hotkeys(),
+            Action::Hotkey(which, hotkey) => notice = self.set_hotkey(which, hotkey),
+            Action::ResetHotkey(which) => {
+                notice = self.set_hotkey(which, which.default_keys().into());
+            }
+            Action::ColorFormat(format) => self.settings.color_format = format,
             Action::ChangeFolder => {
                 let picked = rfd::FileDialog::new()
                     .set_title(i18n::t(i18n::T::FolderTitle))
@@ -448,15 +624,23 @@ impl App {
         }
     }
 
-    /// Switches to `hotkey`, keeping the old one when the new one can't be registered.
-    fn set_hotkey(&mut self, hotkey: String) -> Option<Notice> {
-        let previous = std::mem::replace(&mut self.settings.hotkey, hotkey);
-        if !self.register_hotkey() {
-            self.settings.hotkey = previous;
-            self.register_hotkey();
+    /// Switches `which` to `hotkey`, keeping the old one when the new one can't
+    /// be registered.
+    fn set_hotkey(&mut self, which: Shortcut, hotkey: String) -> Option<Notice> {
+        // Recording unregistered both; bring the other one back too.
+        self.register_hotkeys();
+        let other = Shortcut::ALL.into_iter().find(|w| *w != which)?;
+        if hotkey == self.settings.shortcut(other) {
             return Some(Notice::ShortcutTaken);
         }
-        if self.settings.replace_system
+        let previous = std::mem::replace(self.settings.shortcut_mut(which), hotkey);
+        if !self.register_hotkey(which) {
+            *self.settings.shortcut_mut(which) = previous;
+            self.register_hotkey(which);
+            return Some(Notice::ShortcutTaken);
+        }
+        if which == Shortcut::Capture
+            && self.settings.replace_system
             && let Err(err) = platform::replace_system_screenshot(true, &self.settings.hotkey)
         {
             log::warn!("failed to update the system shortcut: {err:#}");
@@ -471,11 +655,8 @@ impl ApplicationHandler<UserEvent> for App {
         if cause == StartCause::Init {
             event_loop.set_control_flow(ControlFlow::Wait);
             self.rebuild_tray();
-            if self.capture_now {
-                self.start_capture(event_loop);
-            }
-            if self.settings_now {
-                self.open_settings(event_loop);
+            if let Some(request) = self.start.take() {
+                self.request(event_loop, request);
             }
         }
     }
@@ -485,17 +666,26 @@ impl ApplicationHandler<UserEvent> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
             UserEvent::Hotkey(event) => {
-                if Some(event.id()) == self.capture_hotkey.map(|h| h.id())
-                    && event.state() == HotKeyState::Pressed
+                if event.state() != HotKeyState::Pressed {
+                    return;
+                }
+                if Some(event.id()) == self.registered[Shortcut::Capture as usize].map(|h| h.id()) {
+                    self.start_capture(event_loop, None, false);
+                } else if Some(event.id())
+                    == self.registered[Shortcut::Pick as usize].map(|h| h.id())
                 {
-                    self.start_capture(event_loop);
+                    self.start_capture(event_loop, None, true);
                 }
             }
-            UserEvent::Capture => self.start_capture(event_loop),
+            UserEvent::Request(request) => self.request(event_loop, request),
             #[cfg(target_os = "linux")]
             UserEvent::PortalShortcut(hotkey, result) => self.portal_answered(hotkey, result),
-            UserEvent::Recognized(result) => self.recognized(result),
-            UserEvent::Settings => self.open_settings(event_loop),
+            UserEvent::Recognized(result) => self.recognized(event_loop, result),
+            UserEvent::ScrollGrew => {
+                if let Some(scroll) = &self.scroll {
+                    scroll.request_redraw();
+                }
+            }
             UserEvent::UpdateChecked(result, manual) => {
                 // The daily check stays quiet unless the user turned it off meanwhile.
                 if !manual && !self.settings.auto_update {
@@ -541,13 +731,27 @@ impl ApplicationHandler<UserEvent> for App {
         }
     }
 
-    fn window_event(&mut self, _: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         if let Some(window) = &mut self.settings_window
             && window.id() == id
         {
             if let Some(action) = window.window_event(event, &self.settings, &self.update_status) {
                 self.apply(action);
             }
+            return;
+        }
+        if let Some(scroll) = &mut self.scroll
+            && scroll.id() == id
+        {
+            match scroll.window_event(event) {
+                Some(ScrollAction::Done) => self.finish_scroll(event_loop),
+                Some(ScrollAction::Cancel) => self.scroll = None,
+                None => {}
+            }
+            return;
+        }
+        if let Some(index) = self.pins.iter().position(|p| p.id() == id) {
+            self.pin_event(index, event);
             return;
         }
         let Some(overlay) = &mut self.overlay else {
@@ -569,15 +773,42 @@ impl ApplicationHandler<UserEvent> for App {
             }
         }
         if let Some(outcome) = outcome {
-            self.finish_capture(outcome);
+            self.finish_capture(event_loop, outcome);
         }
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         self.overlay = None;
-        if let Some(hotkey) = self.capture_hotkey.take() {
-            let _ = self.hotkeys.unregister(hotkey);
+        self.pins.clear();
+        for which in Shortcut::ALL {
+            self.unregister_hotkey(which);
         }
         log::info!("Snapt stopped");
     }
+}
+
+/// A spot for an image of `width` × `height` pixels in the middle of the main
+/// screen, shrunk to fit when it is bigger than the screen.
+fn centered(
+    event_loop: &ActiveEventLoop,
+    (width, height): (u32, u32),
+) -> (PhysicalPosition<i32>, PhysicalSize<u32>) {
+    let Some(monitor) = event_loop
+        .primary_monitor()
+        .or_else(|| event_loop.available_monitors().next())
+    else {
+        return (
+            PhysicalPosition::new(0, 0),
+            PhysicalSize::new(width, height),
+        );
+    };
+    let (origin, screen) = (monitor.position(), monitor.size());
+    let fit = (0.9 * screen.width as f64 / width as f64)
+        .min(0.9 * screen.height as f64 / height as f64)
+        .min(1.0);
+    let w = ((width as f64 * fit).round() as u32).max(1);
+    let h = ((height as f64 * fit).round() as u32).max(1);
+    let x = origin.x + (screen.width as i32 - w as i32) / 2;
+    let y = origin.y + (screen.height as i32 - h as i32) / 2;
+    (PhysicalPosition::new(x, y), PhysicalSize::new(w, h))
 }

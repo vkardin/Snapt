@@ -175,8 +175,26 @@ impl Selection {
         !matches!(self.drag, Drag::Idle)
     }
 
+    /// Whether the selection is being drawn or resized, not just moved.
+    pub fn is_sizing(&self) -> bool {
+        matches!(self.drag, Drag::Creating { .. } | Drag::Resizing { .. })
+    }
+
     pub fn clear(&mut self) {
         self.rect = None;
+        self.drag = Drag::Idle;
+    }
+
+    /// Selects `rect`, cut to the surface.
+    pub fn set(&mut self, rect: Rect) {
+        let x = rect.x.clamp(0, self.width - 1);
+        let y = rect.y.clamp(0, self.height - 1);
+        self.rect = Some(Rect {
+            x,
+            y,
+            w: rect.w.clamp(1, self.width - x),
+            h: rect.h.clamp(1, self.height - y),
+        });
         self.drag = Drag::Idle;
     }
 
