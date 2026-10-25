@@ -16,6 +16,8 @@ on:
       - .github/workflows/release.yml
       - .github/release-notes.md
       - assets/icons/**
+      - assets/installer/**
+      - build.rs
       - Cargo.toml
 
 env:

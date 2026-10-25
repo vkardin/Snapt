@@ -46,6 +46,10 @@ strip = true
 
 # Installers are built with cargo-packager: `cargo build --release && cargo packager --release`.
 # See .github/workflows/release.yml for the formats built on each platform.
+# Gives snapt.exe its icon in Explorer and the taskbar.
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
 [package.metadata.packager]
 product-name = "Snapt"
 identifier = "io.github.vkardin.snapt"
@@ -72,6 +76,11 @@ signing-identity = "-"
 [package.metadata.packager.nsis]
 # Install per user, so the installer needs no administrator rights.
 installer-mode = "currentUser"
+installer-icon = "assets/icons/icon.ico"
+header-image = "assets/installer/header.bmp"
+sidebar-image = "assets/installer/sidebar.bmp"
+languages = ["English", "Russian", "Ukrainian"]
+display-language-selector = false
 
 [package.metadata.packager.deb]
 depends = ["libxcb1", "libxkbcommon-x11-0", "libxcb-randr0", "libxcb-shm0", "libdbus-1-3", "libpipewire-0.3-0", "libwayland-client0", "libegl1", "libgbm1"]

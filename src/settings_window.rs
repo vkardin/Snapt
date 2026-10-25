@@ -20,6 +20,7 @@ use winit::{
 use crate::{
     font,
     i18n::{Lang, T, t},
+    icon,
     paint::{fill_round, rgb},
     platform,
     settings::{DEFAULT_HOTKEY, Format, Settings},
@@ -125,6 +126,9 @@ impl SettingsWindow {
             .with_title(t(T::SettingsTitle))
             .with_inner_size(LogicalSize::new(WIDTH, HEIGHT))
             .with_resizable(false)
+            .with_window_icon(
+                winit::window::Icon::from_rgba(icon::rgba(), icon::SIZE, icon::SIZE).ok(),
+            )
             .with_visible(false);
         let window = Rc::new(
             event_loop
