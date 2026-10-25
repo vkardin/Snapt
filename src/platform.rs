@@ -52,6 +52,15 @@ pub fn replace_system_hint() -> crate::i18n::T {
     }
 }
 
+/// What to install when the system has no text recognizer.
+pub fn ocr_missing_hint() -> crate::i18n::T {
+    if cfg!(target_os = "windows") {
+        crate::i18n::T::OcrMissingWindows
+    } else {
+        crate::i18n::T::OcrMissingLinux
+    }
+}
+
 #[cfg(target_os = "windows")]
 mod system_screenshot {
     use std::os::windows::process::CommandExt;

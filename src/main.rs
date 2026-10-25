@@ -13,6 +13,7 @@ mod font;
 mod i18n;
 mod icon;
 mod instance;
+mod ocr;
 mod output;
 mod overlay;
 mod paint;
