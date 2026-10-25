@@ -33,6 +33,9 @@ No accounts, no cloud, a few megabytes on disk.
 - Copy the text in the selection, recognized by the system's own OCR (English, Russian,
   Ukrainian and more).
 - Copy it, save it as PNG or JPEG, print it, or search Google Lens for similar images.
+- Pin it on top of all windows to keep it in sight while you work, as in Snipaste.
+- From the tray: copy the full screen in one click, take a screenshot after 3, 5 or 10
+  seconds, select the last area again, and reopen your recent screenshots.
 - A settings window for the capture shortcut, screenshots folder, image format and start at
   login, and an option to replace the system screenshot tool.
 - In English, Russian and Ukrainian, and it updates itself from GitHub Releases.
@@ -69,11 +72,23 @@ The screen freezes, then:
 | Print | `Ctrl+P` |
 | Search for similar images | `Ctrl+F` |
 | Copy the text in it | `Ctrl+Shift+C` |
+| Pin it on top of all windows | `F3` |
 | Pick a color from the screen | `I`, then click; the HEX code is copied too |
 | Cancel | `Esc` or right-click |
 
 On macOS, use `Cmd` instead of `Ctrl`. While typing text, `Enter` starts a new line and
 `Esc` finishes the text.
+
+A pinned screenshot stays on top of other windows. Drag it to move it, zoom it with the mouse
+wheel or `+` and `-` (`0` goes back to 100 %), copy it again with `Ctrl+C`, save it with
+`Ctrl+S`, and close it with `Esc`, a double click or the middle mouse button.
+
+The tray menu also has:
+
+- **Copy full screen**: all monitors at once, straight to the clipboard;
+- **Repeat last area**: opens the screenshot with the area you selected last time;
+- **Screenshot with delay**: in 3, 5 or 10 seconds, to catch menus and tooltips;
+- **Recent screenshots**: the last 10, kept between restarts; click one to pin it.
 
 ### Settings
 
@@ -90,7 +105,11 @@ Pick **Settings…** in the tray menu. There you can:
   tray and in the window. The Windows installer, the macOS app and the AppImage update
   themselves; for the `.deb`, the download page opens.
 
-The settings are stored in a plain-text `settings.ini` in the config folder.
+The settings are stored in a plain-text `settings.ini` in the config folder. Two more
+settings live only there: `history` sets how many recent screenshots to keep (0 keeps none),
+and `file_name` sets how saved files are named, with `strftime` codes such as `%Y` year,
+`%m` month, `%d` day, `%H` hour, `%M` minute and `%S` second. The default is
+`Snapt_%Y-%m-%d_%H-%M-%S`.
 
 ### Command line
 
