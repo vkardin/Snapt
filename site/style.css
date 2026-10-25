@@ -161,6 +161,23 @@ details { border: 1px solid var(--line); border-radius: var(--radius); backgroun
 summary { cursor: pointer; font-weight: 600; padding: 16px 0; }
 details p { margin: 0 0 16px; color: var(--muted); }
 
+/* Donations */
+.wallets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-bottom: 8px; }
+@media (max-width: 960px) { .wallets { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 520px) { .wallets { grid-template-columns: 1fr; } }
+.wallet { display: flex; flex-direction: column; gap: 14px; padding: 20px; }
+.coin { display: flex; align-items: center; gap: 10px; }
+.coin i { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-weight: 700; font-size: 14px; color: #fff; flex: none; }
+.coin b { display: block; font-size: 16px; }
+.coin small { display: block; color: var(--muted); font-size: 13px; }
+.qr { background: #fff; border-radius: 12px; padding: 10px; }
+.qr img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+@media (max-width: 520px) { .qr { max-width: 240px; width: 100%; margin: 0 auto; } }
+.addr { font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted); word-break: break-all; background: var(--bg-soft); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; user-select: all; }
+.copy { margin-top: auto; width: 100%; padding: 10px; border: 0; border-radius: 10px; background: var(--brand-strong); color: #fff; font: inherit; font-weight: 600; font-size: 14px; cursor: pointer; }
+.copy:hover { background: var(--brand); }
+.copy.done { background: #16a34a; }
+
 footer { padding: 36px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
 footer .wrap { display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; }
 footer a { color: var(--muted); }
