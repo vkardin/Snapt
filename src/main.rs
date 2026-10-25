@@ -9,6 +9,7 @@
 mod app;
 mod capture;
 mod font;
+mod history;
 mod i18n;
 mod icon;
 mod instance;
@@ -16,6 +17,7 @@ mod ocr;
 mod output;
 mod overlay;
 mod paint;
+mod pin;
 mod platform;
 mod settings;
 mod settings_window;
