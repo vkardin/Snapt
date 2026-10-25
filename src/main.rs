@@ -8,6 +8,7 @@
 
 mod app;
 mod capture;
+mod font;
 mod icon;
 mod output;
 mod overlay;
@@ -41,7 +42,7 @@ fn main() -> Result<()> {
         let _ = proxy.send_event(UserEvent::Hotkey(event));
     }));
 
-    let mut app = App::new()?;
+    let mut app = App::new(std::env::args().any(|a| a == "--capture"))?;
     event_loop.run_app(&mut app)?;
     Ok(())
 }
