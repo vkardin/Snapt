@@ -273,7 +273,7 @@ footer a { color: var(--muted); }
     <h2>How it works</h2>
     <p class="sub">No windows to click through.</p>
     <div class="steps">
-      <div class="step"><h3>Press PrtSc</h3><p>Or pick <b>Take screenshot</b> in the tray menu. The screen freezes.</p></div>
+      <div class="step"><h3>Press PrtSc</h3><p>Or <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>9</kbd> on macOS, or <b>Take screenshot</b> in the tray menu. The screen freezes.</p></div>
       <div class="step"><h3>Select an area</h3><p>Drag with the mouse. Adjust it by the edges, or press <kbd>Ctrl</kbd>+<kbd>A</kbd> for the whole screen.</p></div>
       <div class="step"><h3>Draw on it</h3><p>Pick a tool on the toolbar or press its letter, like <kbd>A</kbd> for an arrow or <kbd>T</kbd> for text.</p></div>
       <div class="step"><h3>Copy or save</h3><p>Press <kbd>Ctrl</kbd>+<kbd>C</kbd> and paste anywhere, or <kbd>Ctrl</kbd>+<kbd>S</kbd> to save a file.</p></div>
@@ -334,7 +334,7 @@ footer a { color: var(--muted); }
           <li><a data-asset="_amd64\.deb$" href="https://github.com/vkardin/snapt/releases">Debian and Ubuntu <span>.deb</span></a></li>
           <li><a data-asset="\.AppImage$" href="https://github.com/vkardin/snapt/releases">Any distribution <span>AppImage</span></a></li>
         </ul>
-        <p>x86_64. The PrtSc hotkey works on X11 for now.</p>
+        <p>x86_64. On Wayland, bind <code>snapt --capture</code> to a key.</p>
       </div>
     </div>
     <p class="note">Checksums are in <code>SHA256SUMS.txt</code> on the <a href="https://github.com/vkardin/snapt/releases">release page</a>. Prefer to build it yourself? See <a href="https://github.com/vkardin/snapt#building-from-source">building from source</a>.</p>
@@ -360,6 +360,14 @@ footer a { color: var(--muted); }
     <details>
       <summary>Does Snapt upload my screenshots?</summary>
       <p>No. Snapt has no servers and makes no network requests. Everything stays on your computer.</p>
+    </details>
+    <details>
+      <summary>How do I change the shortcut or the save folder?</summary>
+      <p>Open <b>Settings</b> in the tray menu (menu bar on macOS). There you can change the shortcut, the folder and the format (PNG or JPEG), save without asking, and start Snapt with the system.</p>
+    </details>
+    <details>
+      <summary>PrtSc does nothing on Wayland</summary>
+      <p>Wayland doesn't let apps grab global shortcuts. Bind <code>snapt --capture</code> to a key in your desktop's keyboard settings, and it takes a screenshot with the running Snapt.</p>
     </details>
     <details>
       <summary>Is it really free?</summary>
