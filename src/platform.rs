@@ -25,7 +25,7 @@ pub fn screen_access() -> bool {
     true
 }
 
-/// Whether this is a Wayland session, where apps can't register global shortcuts.
+/// Whether this is a Wayland session, where shortcuts and screenshots go through the portal.
 pub fn is_wayland() -> bool {
     cfg!(target_os = "linux") && std::env::var_os("WAYLAND_DISPLAY").is_some()
 }
