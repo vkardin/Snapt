@@ -44,7 +44,20 @@ pub enum Outcome {
     Save(RgbaImage),
     Print(RgbaImage),
     Search(RgbaImage),
+    /// Pin the image on top of all windows, `size` big at `position` (physical pixels).
+    Pin {
+        image: RgbaImage,
+        position: PhysicalPosition<i32>,
+        size: PhysicalSize<u32>,
+    },
     Cancel,
+}
+
+/// A selected area and the monitor it was on, to select again next time.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Area {
+    monitor: PhysicalPosition<i32>,
+    rect: Rect,
 }
 
 /// The drawing settings, kept from one screenshot to the next.
@@ -96,6 +109,8 @@ pub struct Overlay {
 struct Screen {
     surface: Surface<OwnedDisplayHandle, Rc<Window>>,
     window: Rc<Window>,
+    /// The monitor's top-left corner on the desktop.
+    origin: PhysicalPosition<i32>,
     image: RgbaImage,
     frame: Frame,
     selection: Selection,
@@ -118,13 +133,14 @@ struct Layer {
 }
 
 impl Overlay {
-    /// Opens one overlay window per monitor, each showing its shot.
-    /// Opens one overlay window per monitor, each showing its shot. With
-    /// `pick_only` it is just the color picker, copying colors as `format`.
+    /// Opens one overlay window per monitor, each showing its shot, with
+    /// `area` already selected when it is given and its monitor is still there.
+    /// With `pick_only` it is just the color picker, copying colors as `format`.
     pub fn open(
         event_loop: &ActiveEventLoop,
         shots: Vec<Shot>,
         style: Style,
+        area: Option<Area>,
         pick_only: bool,
         format: ColorFormat,
     ) -> Result<Self> {
@@ -158,6 +174,14 @@ impl Overlay {
             recognize: None,
             status: None,
         };
+        if let Some(area) = area
+            && let Some(screen) = overlay
+                .screens
+                .iter_mut()
+                .find(|s| s.origin == area.monitor)
+        {
+            screen.selection.set(area.rect);
+        }
         // Show every window only after its first frame is drawn, so nothing flickers.
         for i in 0..overlay.screens.len() {
             overlay.redraw(i);
@@ -166,6 +190,16 @@ impl Overlay {
         // Keyboard focus goes to the first screen; clicking another one moves it there.
         overlay.screens[0].window.focus_window();
         Ok(overlay)
+    }
+
+    /// The area selected right now, if any.
+    pub fn area(&self) -> Option<Area> {
+        self.screens.iter().find_map(|s| {
+            Some(Area {
+                monitor: s.origin,
+                rect: s.selection.rect()?,
+            })
+        })
     }
 
     pub fn owns(&self, id: WindowId) -> bool {
@@ -398,6 +432,7 @@ impl Overlay {
             }
             Target::Button(Button::Search) => return screen.output().map(Outcome::Search),
             Target::Button(Button::Print) => return screen.output().map(Outcome::Print),
+            Target::Button(Button::Pin) => return screen.pin(),
             Target::Button(Button::Copy) => return screen.output().map(Outcome::Copy),
             Target::Button(Button::Save) => return screen.output().map(Outcome::Save),
         }
@@ -500,6 +535,7 @@ impl Overlay {
             KeyCode::KeyS if command => Some(Outcome::Save(screen.output_or_all())),
             KeyCode::KeyP if command => Some(Outcome::Print(screen.output_or_all())),
             KeyCode::KeyF if command => Some(Outcome::Search(screen.output_or_all())),
+            KeyCode::F3 => screen.pin(),
             KeyCode::KeyA if command => {
                 screen.commit_text();
                 screen.selection.select_all();
@@ -570,6 +606,7 @@ impl Screen {
         let size = window.inner_size();
         let mut screen = Self {
             surface,
+            origin: monitor.position(),
             frame: Frame::new(&image, size.width.max(1), size.height.max(1)),
             selection: Selection::new(size.width as i32, size.height as i32),
             window,
@@ -888,6 +925,16 @@ impl Screen {
     /// The selection, or the whole monitor when nothing is selected.
     fn output_or_all(&mut self) -> RgbaImage {
         self.output().unwrap_or_else(|| self.image.clone())
+    }
+
+    /// Pins the selection right where it is on screen.
+    fn pin(&mut self) -> Option<Outcome> {
+        let rect = self.selection.rect()?;
+        Some(Outcome::Pin {
+            image: self.output()?,
+            position: PhysicalPosition::new(self.origin.x + rect.x, self.origin.y + rect.y),
+            size: PhysicalSize::new(rect.w as u32, rect.h as u32),
+        })
     }
 }
 
