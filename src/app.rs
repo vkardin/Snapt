@@ -3,6 +3,7 @@ use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey:
 use tray_icon::menu::MenuEvent;
 use winit::{
     application::ApplicationHandler,
+    dpi::{PhysicalPosition, PhysicalSize},
     event::{StartCause, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy},
     window::WindowId,
@@ -10,9 +11,11 @@ use winit::{
 
 use crate::{
     capture,
+    history::History,
     i18n::{self, T, t},
     ocr, output,
     overlay::{Outcome, Overlay, Style},
+    pin::{Pin, PinAction},
     platform,
     settings::{self, DEFAULT_HOTKEY, Settings},
     settings_window::{Action, Notice, SettingsWindow, UpdateStatus},
@@ -43,6 +46,8 @@ pub struct App {
     capture_hotkey: Option<HotKey>,
     tray: Option<Tray>,
     overlay: Option<Overlay>,
+    pins: Vec<Pin>,
+    history: History,
     settings_window: Option<SettingsWindow>,
     settings: Settings,
     style: Style,
@@ -77,6 +82,8 @@ impl App {
             capture_hotkey: None,
             tray: None,
             overlay: None,
+            pins: Vec::new(),
+            history: History::load(settings.history),
             settings_window: None,
             settings,
             style,
@@ -166,26 +173,25 @@ impl App {
         self.settings.stroke = stroke;
         self.settings.text_size = text_size;
 
-        let result = match outcome {
+        let result = match &outcome {
             Outcome::Cancel => Ok(()),
-            Outcome::Copy(shot) => self.output.copy(&shot).map(|()| {
-                log::info!("copied {}×{} to the clipboard", shot.width(), shot.height());
-            }),
+            Outcome::Copy(shot) => self.copy(shot),
             Outcome::Save(shot) => {
-                let folder = self.settings.folder.clone();
-                let saved = self.output.save(&shot, &mut self.settings);
-                changed |= folder != self.settings.folder;
-                saved.map(|path| {
-                    if let Some(path) = path {
-                        log::info!("saved {}", path.display());
-                    }
-                })
+                changed |= self.save(shot);
+                Ok(())
             }
-            Outcome::Print(shot) => self.output.print(&shot),
-            Outcome::Search(shot) => self.output.search(&shot),
+            Outcome::Print(shot) => self.output.print(shot),
+            Outcome::Search(shot) => self.output.search(shot),
         };
         if let Err(err) = result {
             log::error!("{err:#}");
+        }
+        match outcome {
+            Outcome::Cancel => {}
+            Outcome::Copy(shot)
+            | Outcome::Save(shot)
+            | Outcome::Print(shot)
+            | Outcome::Search(shot) => self.remember(&shot),
         }
         if changed {
             self.save_settings();
@@ -217,9 +223,117 @@ impl App {
         }
     }
 
+    fn copy(&mut self, shot: &image::RgbaImage) -> Result<()> {
+        self.output.copy(shot).map(|()| {
+            log::info!("copied {}×{} to the clipboard", shot.width(), shot.height());
+        })
+    }
+
+    /// Saves `shot`; returns whether the settings changed (the folder picked becomes the default).
+    fn save(&mut self, shot: &image::RgbaImage) -> bool {
+        let folder = self.settings.folder.clone();
+        match self.output.save(shot, &mut self.settings) {
+            Ok(Some(path)) => log::info!("saved {}", path.display()),
+            Ok(None) => {}
+            Err(err) => log::error!("{err:#}"),
+        }
+        folder != self.settings.folder
+    }
+
+    /// Adds `shot` to the history and the tray menu.
+    fn remember(&mut self, shot: &image::RgbaImage) {
+        self.history.add(shot);
+        if let Some(tray) = &mut self.tray {
+            tray.set_history(self.history.entries());
+        }
+    }
+
+    /// Copies all screens at once, without the overlay.
+    fn copy_full_screen(&mut self) {
+        if !platform::screen_access() {
+            return;
+        }
+        match capture::all_monitors() {
+            Ok(shots) => {
+                let shot = capture::stitch(&shots);
+                if let Err(err) = self.copy(&shot) {
+                    log::error!("{err:#}");
+                }
+                self.remember(&shot);
+            }
+            Err(err) => log::error!("screenshot failed: {err:#}"),
+        }
+    }
+
+    /// Opens the overlay after `seconds`, so menus and tooltips can be opened meanwhile.
+    fn capture_later(&self, seconds: u64) {
+        let proxy = self.proxy.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(seconds));
+            let _ = proxy.send_event(UserEvent::Capture);
+        });
+    }
+
+    /// Pins a screenshot from the history in the middle of the main screen.
+    fn pin_from_history(&mut self, event_loop: &ActiveEventLoop, index: usize) {
+        let image = match self.history.open(index) {
+            Ok(image) => image,
+            Err(err) => {
+                log::error!("{err:#}");
+                return;
+            }
+        };
+        let (position, size) = centered(event_loop, image.dimensions());
+        self.pin(event_loop, image, position, size);
+    }
+
+    fn pin(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        image: image::RgbaImage,
+        position: PhysicalPosition<i32>,
+        size: PhysicalSize<u32>,
+    ) {
+        match Pin::open(event_loop, image, position, size) {
+            Ok(pin) => self.pins.push(pin),
+            Err(err) => log::error!("{err:#}"),
+        }
+    }
+
+    fn pin_event(&mut self, index: usize, event: WindowEvent) {
+        let Some(action) = self.pins[index].window_event(event) else {
+            return;
+        };
+        match action {
+            PinAction::Close => {
+                self.pins.remove(index);
+            }
+            PinAction::Copy(shot) => {
+                if let Err(err) = self.copy(&shot) {
+                    log::error!("{err:#}");
+                }
+            }
+            PinAction::Save(shot) => {
+                if self.save(&shot) {
+                    self.save_settings();
+                }
+            }
+        }
+    }
+
     fn run_command(&mut self, event_loop: &ActiveEventLoop, command: Command) {
         match command {
             Command::Capture => self.start_capture(event_loop),
+            Command::FullScreen => self.copy_full_screen(),
+            Command::RepeatArea => self.start_capture(event_loop),
+            Command::Delay(seconds) => self.capture_later(seconds),
+            Command::History(index) => self.pin_from_history(event_loop, index),
+            Command::ClearHistory => {
+                self.history.clear();
+                if let Some(tray) = &mut self.tray {
+                    tray.set_history(self.history.entries());
+                }
+            }
             Command::OpenFolder => self.open_folder(),
             Command::Settings => self.open_settings(event_loop),
             Command::Update => self.start_update(),
@@ -239,7 +353,10 @@ impl App {
         self.tray = None;
         let version = self.update.as_ref().map(|u| u.version.as_str());
         match Tray::new(&self.settings, version) {
-            Ok(tray) => self.tray = Some(tray),
+            Ok(mut tray) => {
+                tray.set_history(self.history.entries());
+                self.tray = Some(tray);
+            }
             Err(err) => log::error!("failed to create the tray icon: {err:#}"),
         }
     }
@@ -481,6 +598,10 @@ impl ApplicationHandler<UserEvent> for App {
             }
             return;
         }
+        if let Some(index) = self.pins.iter().position(|p| p.id() == id) {
+            self.pin_event(index, event);
+            return;
+        }
         let Some(overlay) = &mut self.overlay else {
             return;
         };
@@ -506,9 +627,33 @@ impl ApplicationHandler<UserEvent> for App {
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         self.overlay = None;
+        self.pins.clear();
         if let Some(hotkey) = self.capture_hotkey.take() {
             let _ = self.hotkeys.unregister(hotkey);
         }
         log::info!("Snapt stopped");
     }
+}
+
+/// A spot for an image of `width` × `height` pixels in the middle of the main
+/// screen, shrunk to fit when it is bigger than the screen.
+fn centered(
+    event_loop: &ActiveEventLoop,
+    (width, height): (u32, u32),
+) -> (PhysicalPosition<i32>, PhysicalSize<u32>) {
+    let Some(monitor) = event_loop
+        .primary_monitor()
+        .or_else(|| event_loop.available_monitors().next())
+    else {
+        return (PhysicalPosition::new(0, 0), PhysicalSize::new(width, height));
+    };
+    let (origin, screen) = (monitor.position(), monitor.size());
+    let fit = (0.9 * screen.width as f64 / width as f64)
+        .min(0.9 * screen.height as f64 / height as f64)
+        .min(1.0);
+    let w = ((width as f64 * fit).round() as u32).max(1);
+    let h = ((height as f64 * fit).round() as u32).max(1);
+    let x = origin.x + (screen.width as i32 - w as i32) / 2;
+    let y = origin.y + (screen.height as i32 - h as i32) / 2;
+    (PhysicalPosition::new(x, y), PhysicalSize::new(w, h))
 }
