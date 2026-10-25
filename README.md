@@ -33,7 +33,18 @@ No accounts, no cloud, a few megabytes on disk.
 - [ ] Editor: pen, line, arrow, rectangle, marker, text, colors, undo
 - [ ] Print and reverse image search
 - [ ] Settings: hotkeys, save folder, image format, start with the system
-- [ ] Installers: `.msi`, `.dmg`, AppImage and Flatpak
+- [x] Installers: `.exe`, `.msi`, `.dmg`, `.deb` and AppImage
+- [ ] Flatpak and code signing
+
+## Install
+
+Download the installer for your system from the
+[latest release](https://github.com/vkardin/snapt/releases):
+`.exe` or `.msi` for Windows, `.dmg` for macOS, `.deb` or AppImage for Linux.
+
+Snapt is not code-signed yet. On Windows, click **More info → Run anyway** in the
+SmartScreen prompt. On macOS, open **System Settings → Privacy & Security** after the
+first launch attempt and click **Open Anyway**.
 
 ## Building from source
 
@@ -53,6 +64,18 @@ sudo apt install libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev libdbus-1-dev \
 ```
 
 Set `RUST_LOG=debug` to see detailed logs.
+
+To build the installers for your platform, install
+[cargo-packager](https://github.com/crabnebula-dev/cargo-packager) and run:
+
+```sh
+cargo install cargo-packager --locked
+cargo build --release
+cargo packager --release
+```
+
+They land in `target/packages`. Pushing a `v*` tag builds them for all platforms in CI
+and publishes a GitHub Release.
 
 ## Platform notes
 

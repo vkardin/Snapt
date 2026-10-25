@@ -37,3 +37,35 @@ codegen-units = 1
 opt-level = "s"
 panic = "abort"
 strip = true
+
+# Installers are built with cargo-packager: `cargo build --release && cargo packager --release`.
+# See .github/workflows/release.yml for the formats built on each platform.
+[package.metadata.packager]
+product-name = "Snapt"
+identifier = "io.github.vkardin.snapt"
+publisher = "vkardin"
+authors = ["vkardin"]
+homepage = "https://github.com/vkardin/snapt"
+category = "Utility"
+copyright = "Copyright (c) vkardin. MIT License."
+out-dir = "target/packages"
+icons = [
+    "assets/icons/32x32.png",
+    "assets/icons/128x128.png",
+    "assets/icons/256x256.png",
+    "assets/icons/512x512.png",
+    "assets/icons/icon.icns",
+    "assets/icons/icon.ico",
+]
+
+[package.metadata.packager.macos]
+minimum-system-version = "11.0"
+# Ad-hoc signature: no Apple Developer ID yet, but Apple Silicon refuses fully unsigned apps.
+signing-identity = "-"
+
+[package.metadata.packager.nsis]
+# Install per user, so the installer needs no administrator rights.
+installer-mode = "currentUser"
+
+[package.metadata.packager.deb]
+depends = ["libxcb1", "libxcb-randr0", "libxcb-shm0", "libdbus-1-3", "libpipewire-0.3-0", "libwayland-client0", "libegl1", "libgbm1"]
