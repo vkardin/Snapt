@@ -18,6 +18,7 @@ use crate::{
     overlay::{Area, Outcome, Overlay, Style},
     pin::{Pin, PinAction},
     platform,
+    scroll::{Scroll, ScrollAction},
     settings::{self, Settings, Shortcut},
     settings_window::{Action, Notice, SettingsWindow, UpdateStatus},
     tray::{Command, Tray},
@@ -37,6 +38,8 @@ pub enum UserEvent {
     UpdateDownloaded(Result<std::path::PathBuf, String>),
     /// Text recognition on a selection finished.
     Recognized(Result<String, ocr::Error>),
+    /// The scrolling screenshot grew.
+    ScrollGrew,
 }
 
 pub struct App {
@@ -47,6 +50,7 @@ pub struct App {
     tray: Option<Tray>,
     overlay: Option<Overlay>,
     pins: Vec<Pin>,
+    scroll: Option<Scroll>,
     history: History,
     /// The area selected last time, for "Repeat last area".
     last_area: Option<Area>,
@@ -79,6 +83,7 @@ impl App {
             tray: None,
             overlay: None,
             pins: Vec::new(),
+            scroll: None,
             history: History::load(settings.history),
             last_area: None,
             settings_window: None,
@@ -193,7 +198,7 @@ impl App {
             }
             Outcome::Print(shot) => self.output.print(shot),
             Outcome::Search(shot) => self.output.search(shot),
-            Outcome::Pin { .. } => Ok(()),
+            Outcome::Pin { .. } | Outcome::Scroll { .. } => Ok(()),
         };
         if let Err(err) = result {
             log::error!("{err:#}");
@@ -211,6 +216,12 @@ impl App {
             } => {
                 self.remember(&image);
                 self.pin(event_loop, image, position, size);
+            }
+            Outcome::Scroll { region, panel } => {
+                match Scroll::start(event_loop, self.proxy.clone(), region, panel) {
+                    Ok(scroll) => self.scroll = Some(scroll),
+                    Err(err) => log::error!("{err:#}"),
+                }
             }
         }
         if changed {
@@ -318,6 +329,19 @@ impl App {
             Ok(pin) => self.pins.push(pin),
             Err(err) => log::error!("{err:#}"),
         }
+    }
+
+    /// Copies the finished scrolling screenshot and pins it to look it over.
+    fn finish_scroll(&mut self, event_loop: &ActiveEventLoop) {
+        let Some(image) = self.scroll.take().and_then(Scroll::finish) else {
+            return;
+        };
+        if let Err(err) = self.copy(&image) {
+            log::error!("{err:#}");
+        }
+        self.remember(&image);
+        let (position, size) = centered(event_loop, image.dimensions());
+        self.pin(event_loop, image, position, size);
     }
 
     fn pin_event(&mut self, index: usize, event: WindowEvent) {
@@ -588,6 +612,11 @@ impl ApplicationHandler<UserEvent> for App {
             }
             UserEvent::Request(request) => self.request(event_loop, request),
             UserEvent::Recognized(result) => self.recognized(event_loop, result),
+            UserEvent::ScrollGrew => {
+                if let Some(scroll) = &self.scroll {
+                    scroll.request_redraw();
+                }
+            }
             UserEvent::UpdateChecked(result, manual) => {
                 // The daily check stays quiet unless the user turned it off meanwhile.
                 if !manual && !self.settings.auto_update {
@@ -639,6 +668,16 @@ impl ApplicationHandler<UserEvent> for App {
         {
             if let Some(action) = window.window_event(event, &self.settings, &self.update_status) {
                 self.apply(action);
+            }
+            return;
+        }
+        if let Some(scroll) = &mut self.scroll
+            && scroll.id() == id
+        {
+            match scroll.window_event(event) {
+                Some(ScrollAction::Done) => self.finish_scroll(event_loop),
+                Some(ScrollAction::Cancel) => self.scroll = None,
+                None => {}
             }
             return;
         }

@@ -50,6 +50,12 @@ pub enum Outcome {
         position: PhysicalPosition<i32>,
         size: PhysicalSize<u32>,
     },
+    /// Capture the area while the user scrolls it.
+    Scroll {
+        region: crate::scroll::Region,
+        /// Where the scrolling panel goes, outside the area (physical pixels).
+        panel: PhysicalPosition<i32>,
+    },
     Cancel,
 }
 
@@ -111,6 +117,8 @@ struct Screen {
     window: Rc<Window>,
     /// The monitor's top-left corner on the desktop.
     origin: PhysicalPosition<i32>,
+    /// The same corner as the capture API reports it.
+    shot_origin: (i32, i32),
     image: RgbaImage,
     frame: Frame,
     selection: Selection,
@@ -449,6 +457,7 @@ impl Overlay {
             Target::Button(Button::Search) => return screen.output().map(Outcome::Search),
             Target::Button(Button::Print) => return screen.output().map(Outcome::Print),
             Target::Button(Button::Pin) => return screen.pin(),
+            Target::Button(Button::Scroll) => return screen.scroll(),
             Target::Button(Button::Copy) => return screen.output().map(Outcome::Copy),
             Target::Button(Button::Save) => return screen.output().map(Outcome::Save),
         }
@@ -548,6 +557,7 @@ impl Overlay {
                 None
             }
             KeyCode::KeyC if command => Some(Outcome::Copy(screen.output_or_all())),
+            KeyCode::KeyS if command && self.modifiers.shift_key() => screen.scroll(),
             KeyCode::KeyS if command => Some(Outcome::Save(screen.output_or_all())),
             KeyCode::KeyP if command => Some(Outcome::Print(screen.output_or_all())),
             KeyCode::KeyF if command => Some(Outcome::Search(screen.output_or_all())),
@@ -595,7 +605,13 @@ impl Screen {
         monitor: &MonitorHandle,
         shot: Shot,
     ) -> Result<Self> {
-        let Shot { image, windows, .. } = shot;
+        let Shot {
+            image,
+            windows,
+            x,
+            y,
+            ..
+        } = shot;
         let attributes = Window::default_attributes()
             .with_title("Snapt")
             .with_decorations(false)
@@ -624,6 +640,7 @@ impl Screen {
         let mut screen = Self {
             surface,
             origin: monitor.position(),
+            shot_origin: (x, y),
             frame: Frame::new(&image, size.width.max(1), size.height.max(1)),
             selection: Selection::new(size.width as i32, size.height as i32),
             window,
@@ -978,6 +995,31 @@ impl Screen {
     /// The selection, or the whole monitor when nothing is selected.
     fn output_or_all(&mut self) -> RgbaImage {
         self.output().unwrap_or_else(|| self.image.clone())
+    }
+
+    /// Starts a scrolling screenshot of the selection, with the panel below
+    /// it, or above when there is no room below.
+    fn scroll(&mut self) -> Option<Outcome> {
+        let rect = self.selection.rect()?;
+        let (x, y, w, h) = self.to_image(rect)?;
+        let gap = (8.0 * self.window.scale_factor()) as i32;
+        let panel_h = (60.0 * self.window.scale_factor()) as i32;
+        let below = rect.bottom() + gap;
+        let top = if below + panel_h <= self.frame.height as i32 {
+            below
+        } else {
+            (rect.y - gap - panel_h).max(0)
+        };
+        Some(Outcome::Scroll {
+            region: crate::scroll::Region {
+                monitor: self.shot_origin,
+                x,
+                y,
+                w,
+                h,
+            },
+            panel: PhysicalPosition::new(self.origin.x + rect.x, self.origin.y + top),
+        })
     }
 
     /// Pins the selection right where it is on screen.
