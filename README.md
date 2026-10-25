@@ -1,0 +1,78 @@
+<div align="center">
+
+<img src="assets/logo.svg" width="96" alt="Snapt logo">
+
+# Snapt
+
+**A fast, lightweight, open-source screenshot tool for Windows, macOS and Linux.**
+
+Press PrtSc, select an area, add an arrow or a caption, then copy it or save it.<br>
+No accounts, no cloud, a few megabytes on disk.
+
+[![CI](https://github.com/vkardin/snapt/actions/workflows/ci.yml/badge.svg)](https://github.com/vkardin/snapt/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-8B5CF6.svg)](LICENSE)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-5B21B6.svg)
+
+</div>
+
+> [!NOTE]
+> Snapt is in early development. Today it lives in the tray and captures the whole
+> primary screen on PrtSc. Region selection and the editor are next.
+
+## Why Snapt
+
+- **Fast.** A native Rust binary that starts instantly and sits idle in the tray.
+- **Light.** No Electron, no web view, no runtime to install.
+- **Private.** Shots stay on your machine. Snapt never uploads anything.
+- **Familiar.** If you have used LightShot, you already know how Snapt works.
+
+## Roadmap
+
+- [x] Tray icon with a menu
+- [x] Global PrtSc hotkey
+- [x] Copy to clipboard and save as PNG to `Pictures/Snapt`
+- [ ] Region selection across all monitors, HiDPI aware
+- [ ] Editor: pen, line, arrow, rectangle, marker, text, colors, undo
+- [ ] Print and reverse image search
+- [ ] Settings: hotkeys, save folder, image format, start with the system
+- [ ] Installers: `.msi`, `.dmg`, AppImage and Flatpak
+
+## Building from source
+
+You need a recent stable [Rust toolchain](https://rustup.rs).
+
+```sh
+git clone https://github.com/vkardin/snapt
+cd snapt
+cargo run --release
+```
+
+On Debian or Ubuntu, install the system libraries first:
+
+```sh
+sudo apt install libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev libdbus-1-dev \
+  libpipewire-0.3-dev libwayland-dev libegl-dev libgbm-dev clang
+```
+
+Set `RUST_LOG=debug` to see detailed logs.
+
+## Platform notes
+
+- **macOS:** the first capture asks for the Screen Recording permission in
+  System Settings → Privacy & Security.
+- **Linux:** the tray icon uses the StatusNotifierItem protocol. KDE supports it out of
+  the box; on GNOME, install the AppIndicator extension. The global hotkey currently
+  works on X11 only. Wayland support is planned through the desktop portal.
+
+## Contributing
+
+Bug reports and ideas are welcome in [Issues](https://github.com/vkardin/snapt/issues).
+Before opening a pull request, please run:
+
+```sh
+cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test
+```
+
+## License
+
+[MIT](LICENSE) © vkardin
