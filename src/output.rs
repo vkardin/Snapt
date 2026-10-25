@@ -9,7 +9,10 @@ use arboard::{Clipboard, ImageData};
 use chrono::{DateTime, Local};
 use image::{DynamicImage, RgbaImage};
 
-use crate::settings::{Format, Settings};
+use crate::{
+    i18n::{self, T, t},
+    settings::{Format, Settings},
+};
 
 /// Where finished screenshots go: the clipboard, an image file, the printer or a search.
 pub struct Output {
@@ -52,14 +55,14 @@ impl Output {
 
         // Best effort: the dialog still works if the default folder can't be created.
         let _ = fs::create_dir_all(&settings.folder);
-        let png = ("PNG image", &["png"][..]);
-        let jpeg = ("JPEG image", &["jpg", "jpeg"][..]);
+        let png = (t(T::PngImage), &["png"][..]);
+        let jpeg = (t(T::JpegImage), &["jpg", "jpeg"][..]);
         let filters = match settings.format {
             Format::Png => [png, jpeg],
             Format::Jpeg => [jpeg, png],
         };
         let mut dialog = rfd::FileDialog::new()
-            .set_title("Save screenshot")
+            .set_title(t(T::SaveTitle))
             .set_directory(&settings.folder)
             .set_file_name(name);
         for (label, extensions) in filters {
@@ -81,6 +84,8 @@ impl Output {
     pub fn print(&mut self, shot: &RgbaImage) -> Result<()> {
         let page = format!(
             include_str!("pages/print.html"),
+            lang = i18n::current().code(),
+            title = t(T::PrintTitle),
             image = png_data_url(shot)?
         );
         open_page("print", &page)
@@ -95,6 +100,10 @@ impl Output {
         }
         let page = format!(
             include_str!("pages/search.html"),
+            lang = i18n::current().code(),
+            title = t(T::SearchTitle),
+            uploading = t(T::SearchUploading),
+            fallback = t(T::SearchFallback),
             image = png_data_url(shot)?
         );
         open_page("search", &page)

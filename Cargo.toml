@@ -1,11 +1,12 @@
 [package]
 name = "snapt"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 rust-version = "1.85"
 description = "A fast, lightweight, open-source screenshot tool for Windows, macOS and Linux."
 license = "MIT"
 repository = "https://github.com/vkardin/snapt"
+homepage = "https://vkardin.github.io/snapt/"
 readme = "README.md"
 keywords = ["screenshot", "screen-capture", "annotation", "lightshot"]
 categories = ["multimedia::images", "gui"]
@@ -26,6 +27,7 @@ softbuffer = "0.4"
 rfd = "0.17"
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
 ab_glyph = "0.2"
+sys-locale = "0.3"
 
 # The KSNI backend talks to the tray over D-Bus directly, so Linux builds need no GTK.
 [target.'cfg(target_os = "linux")'.dependencies]

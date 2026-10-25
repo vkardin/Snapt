@@ -12,6 +12,8 @@ use std::{
 use anyhow::{Context, Result};
 use directories::{ProjectDirs, UserDirs};
 
+use crate::i18n::Lang;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
     Png,
@@ -36,33 +38,31 @@ pub struct Settings {
     /// Save straight into `folder` instead of asking where.
     pub quick_save: bool,
     pub autostart: bool,
+    /// Take over the PrtSc key from the system's own screenshot tool.
+    pub replace_system: bool,
+    /// The interface language; `None` follows the system.
+    pub language: Option<Lang>,
     pub color: u32,
     pub stroke: f32,
     pub text_size: f32,
 }
 
-/// The capture shortcuts offered in the tray menu. Others can be set in the file.
+/// Macs have no PrtSc key; LightShot for Mac uses Cmd+Shift+9.
 #[cfg(target_os = "macos")]
-pub const HOTKEYS: &[&str] = &["Cmd+Shift+9", "Cmd+Shift+S", "Cmd+Shift+X", "Ctrl+Shift+S"];
+pub const DEFAULT_HOTKEY: &str = "Cmd+Shift+9";
 #[cfg(not(target_os = "macos"))]
-pub const HOTKEYS: &[&str] = &[
-    "PrintScreen",
-    "Ctrl+PrintScreen",
-    "Shift+PrintScreen",
-    "Alt+PrintScreen",
-    "Ctrl+Shift+S",
-    "Ctrl+Shift+X",
-];
+pub const DEFAULT_HOTKEY: &str = "PrintScreen";
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            // Macs have no PrtSc key; LightShot for Mac uses ⌘⇧9.
-            hotkey: HOTKEYS[0].into(),
+            hotkey: DEFAULT_HOTKEY.into(),
             folder: default_folder(),
             format: Format::Png,
             quick_save: false,
             autostart: false,
+            replace_system: false,
+            language: None,
             color: 0xFF3B30,
             stroke: 3.0,
             text_size: 20.0,
@@ -71,6 +71,11 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// The language the interface shows.
+    pub fn lang(&self) -> Lang {
+        self.language.unwrap_or_else(Lang::system)
+    }
+
     pub fn path() -> Option<PathBuf> {
         ProjectDirs::from("io.github", "vkardin", "Snapt")
             .map(|dirs| dirs.config_dir().join("settings.ini"))
@@ -118,6 +123,8 @@ impl Settings {
                 }
                 "quick_save" => s.quick_save = value == "true",
                 "autostart" => s.autostart = value == "true",
+                "replace_system" => s.replace_system = value == "true",
+                "language" => s.language = Lang::from_code(value),
                 "color" => {
                     if let Ok(c) = u32::from_str_radix(value.trim_start_matches('#'), 16) {
                         s.color = c & 0xFFFFFF;
@@ -142,6 +149,9 @@ impl Settings {
         let _ = writeln!(t, "format = {}", self.format.extension());
         let _ = writeln!(t, "quick_save = {}", self.quick_save);
         let _ = writeln!(t, "autostart = {}", self.autostart);
+        let _ = writeln!(t, "replace_system = {}", self.replace_system);
+        let language = self.language.map_or("auto", Lang::code);
+        let _ = writeln!(t, "language = {language}");
         let _ = writeln!(t, "color = #{:06X}", self.color);
         let _ = writeln!(t, "stroke = {}", self.stroke);
         let _ = writeln!(t, "text_size = {}", self.text_size);
@@ -165,7 +175,7 @@ pub fn set_autostart(on: bool) -> Result<()> {
 
 /// The path that relaunches this app. An AppImage runs from a temporary mount,
 /// so its own file is used instead.
-fn launch_path() -> Result<PathBuf> {
+pub fn launch_path() -> Result<PathBuf> {
     if let Some(appimage) = std::env::var_os("APPIMAGE") {
         return Ok(PathBuf::from(appimage));
     }
@@ -274,6 +284,8 @@ mod tests {
             format: Format::Jpeg,
             quick_save: true,
             autostart: true,
+            replace_system: true,
+            language: Some(Lang::Uk),
             color: 0x00FF7F,
             stroke: 5.0,
             text_size: 28.0,
@@ -288,12 +300,11 @@ mod tests {
     }
 
     #[test]
-    fn offered_hotkeys_parse() {
-        for hotkey in HOTKEYS {
-            assert!(
-                hotkey.parse::<global_hotkey::hotkey::HotKey>().is_ok(),
-                "{hotkey}"
-            );
-        }
+    fn the_default_hotkey_parses() {
+        assert!(
+            DEFAULT_HOTKEY
+                .parse::<global_hotkey::hotkey::HotKey>()
+                .is_ok()
+        );
     }
 }
