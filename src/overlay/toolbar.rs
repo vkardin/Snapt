@@ -22,6 +22,8 @@ pub enum Button {
     Print,
     Copy,
     Save,
+    /// Picks the drawing color from the screen; sits in the palette.
+    Eyedropper,
 }
 
 const TOOLS: [Button; 9] = [
@@ -63,6 +65,7 @@ impl Button {
             Button::Print => (T::Print, format!("{MOD}+P")),
             Button::Copy => (T::Copy, format!("{MOD}+C")),
             Button::Save => (T::Save, format!("{MOD}+S")),
+            Button::Eyedropper => (T::Eyedropper, "I".into()),
         };
         format!("{} ({key})", t(text))
     }
@@ -73,6 +76,8 @@ impl Button {
 pub enum Target {
     Button(Button),
     Swatch(u32),
+    /// A point on the color spectrum, with the color under it.
+    Spectrum(u32),
     /// Panel background between buttons.
     Panel,
 }
@@ -83,6 +88,7 @@ pub struct Toolbar {
     panels: Vec<Rect>,
     buttons: Vec<(Button, Rect)>,
     swatches: Vec<(u32, Rect)>,
+    spectrum: Option<Rect>,
 }
 
 /// What the toolbar shows besides its layout.
@@ -90,6 +96,8 @@ pub struct Look {
     pub tool: Option<Tool>,
     pub color: u32,
     pub hover: Option<Target>,
+    /// The eyedropper is waiting for a click.
+    pub picking: bool,
 }
 
 impl Toolbar {
@@ -161,12 +169,15 @@ impl Toolbar {
 
         let mut panels = vec![tools, actions];
         let mut swatches = Vec::new();
+        let mut spectrum = None;
         if palette {
-            // Two rows of swatches next to the color button, on the side with room.
+            // Two rows of swatches next to the color button, on the side with room,
+            // then a spectrum for any other color and a row with the eyedropper.
             let swatch = px(24.0);
             let cols = PALETTE.len() as i32 / 2;
+            let spectrum_h = px(72.0);
             let w = cols * swatch + 2 * pad;
-            let h = 2 * swatch + 2 * pad;
+            let h = 3 * swatch + spectrum_h + 2 * gap / 2 + 2 * pad;
             let color_button = buttons.iter().find(|(b, _)| *b == Button::Color).unwrap().1;
             let x = if tools.x - gap - w >= 0 {
                 tools.x - gap - w
@@ -185,6 +196,22 @@ impl Toolbar {
                 };
                 swatches.push((c, r));
             }
+            let spectrum_rect = Rect {
+                x: x + pad + px(3.0),
+                y: y + pad + 2 * swatch + gap / 2,
+                w: cols * swatch - px(6.0),
+                h: spectrum_h,
+            };
+            buttons.push((
+                Button::Eyedropper,
+                Rect {
+                    x: x + pad,
+                    y: spectrum_rect.bottom() + gap / 2,
+                    w: swatch,
+                    h: swatch,
+                },
+            ));
+            spectrum = Some(spectrum_rect);
             panels.push(panel);
         }
 
@@ -193,12 +220,18 @@ impl Toolbar {
             panels,
             buttons,
             swatches,
+            spectrum,
         }
     }
 
     pub fn hit(&self, p: Point) -> Option<Target> {
         if let Some((c, _)) = self.swatches.iter().find(|(_, r)| r.contains(p)) {
             return Some(Target::Swatch(*c));
+        }
+        if let Some(r) = self.spectrum.filter(|r| r.contains(p)) {
+            let fx = (p.x - r.x) as f32 / (r.w - 1).max(1) as f32;
+            let fy = (p.y - r.y) as f32 / (r.h - 1).max(1) as f32;
+            return Some(Target::Spectrum(spectrum_color(fx, fy)));
         }
         if let Some((b, _)) = self.buttons.iter().find(|(_, r)| r.contains(p)) {
             return Some(Target::Button(*b));
@@ -246,6 +279,38 @@ impl Toolbar {
                         fill_round(&mut pixmap, inset(local(r), 1.0 * s), 6.0 * s, ring, 1.0);
                     }
                     fill_round(&mut pixmap, inset(inner, 0.5 * s), 4.0 * s, c, 1.0);
+                }
+                if let Some(r) = self.spectrum {
+                    draw_spectrum(&mut pixmap, r.x - panel.x, r.y - panel.y, r.w, r.h);
+                }
+                if let Some(&(b, r)) = self.buttons.iter().find(|(b, _)| *b == Button::Eyedropper) {
+                    let hovered = look.hover == Some(Target::Button(b));
+                    if look.picking || hovered {
+                        let bg = if look.picking { ACCENT } else { 0x3A3A42 };
+                        fill_round(&mut pixmap, inset(local(r), 1.5 * s), 5.0 * s, bg, 1.0);
+                    }
+                    if let Some(at) = local(r) {
+                        let size = 16.0 * s;
+                        let transform = Transform::from_scale(s, s).post_translate(
+                            at.x() + (at.width() - size) / 2.0,
+                            at.y() + (at.height() - size) / 2.0,
+                        );
+                        icon(&mut pixmap, b, look.color, transform);
+                        // The current color as text, to read or retype elsewhere.
+                        let hex = hex(look.color);
+                        let size = 12.0 * s;
+                        let th = font::line_height(size);
+                        let tx = at.right() + 6.0 * s;
+                        let ty = at.y() + (at.height() - th) / 2.0;
+                        let dot = SkRect::from_xywh(
+                            tx,
+                            at.y() + at.height() / 2.0 - 5.0 * s,
+                            10.0 * s,
+                            10.0 * s,
+                        );
+                        fill_round(&mut pixmap, dot, 3.0 * s, look.color, 1.0);
+                        font::draw(&mut pixmap, &hex, tx + 16.0 * s, ty, size, 0xD4D4D8, 1.0);
+                    }
                 }
             } else {
                 for &(b, r) in self.buttons.iter().filter(|(_, r)| overlaps(*r, *panel)) {
@@ -448,6 +513,15 @@ fn icon(pixmap: &mut Pixmap, button: Button, color: u32, transform: Transform) {
             p.line_to(2.5, 2.5);
             p.line_to(2.5, 11.0);
         }
+        Button::Eyedropper => {
+            p.move_to(3.0, 13.0);
+            p.line_to(9.0, 7.0);
+            p.move_to(7.0, 5.0);
+            p.line_to(11.0, 9.0);
+            p.push_circle(11.6, 4.4, 2.1);
+            p.move_to(3.0, 13.0);
+            p.line_to(2.5, 13.5);
+        }
         Button::Save => {
             p.move_to(8.0, 2.0);
             p.line_to(8.0, 10.5);
@@ -460,6 +534,59 @@ fn icon(pixmap: &mut Pixmap, button: Button, color: u32, transform: Transform) {
     }
     if let Some(path) = p.finish() {
         pixmap.stroke_path(&path, &paint, &stroke, transform, None);
+    }
+}
+
+/// `#RRGGBB` for `0xRRGGBB`.
+pub fn hex(color: u32) -> String {
+    format!("#{:06X}", color & 0xFFFFFF)
+}
+
+/// The spectrum's color at `fx`, `fy` in 0..=1: hue across, from white at the
+/// top through the full hue in the middle to black at the bottom.
+pub fn spectrum_color(fx: f32, fy: f32) -> u32 {
+    let h = fx.clamp(0.0, 1.0) * 6.0;
+    let x = 1.0 - ((h % 2.0) - 1.0).abs();
+    let (r, g, b) = match h as u32 {
+        0 => (1.0, x, 0.0),
+        1 => (x, 1.0, 0.0),
+        2 => (0.0, 1.0, x),
+        3 => (0.0, x, 1.0),
+        4 => (x, 0.0, 1.0),
+        _ => (1.0, 0.0, x),
+    };
+    let fy = fy.clamp(0.0, 1.0);
+    let mix = |c: f32| {
+        let v = if fy < 0.5 {
+            let t = fy * 2.0;
+            1.0 + (c - 1.0) * t
+        } else {
+            c * (1.0 - (fy - 0.5) * 2.0)
+        };
+        (v * 255.0).round() as u32
+    };
+    mix(r) << 16 | mix(g) << 8 | mix(b)
+}
+
+/// Paints the spectrum pixel by pixel into an opaque area of `pixmap`.
+fn draw_spectrum(pixmap: &mut Pixmap, x: i32, y: i32, w: i32, h: i32) {
+    let pw = pixmap.width() as i32;
+    let ph = pixmap.height() as i32;
+    let data = pixmap.data_mut();
+    for row in 0..h {
+        for col in 0..w {
+            let (px, py) = (x + col, y + row);
+            if px < 0 || py < 0 || px >= pw || py >= ph {
+                continue;
+            }
+            let c = spectrum_color(
+                col as f32 / (w - 1).max(1) as f32,
+                row as f32 / (h - 1).max(1) as f32,
+            );
+            let i = ((py * pw + px) * 4) as usize;
+            let [r, g, b] = rgb(c);
+            data[i..i + 4].copy_from_slice(&[r, g, b, 255]);
+        }
     }
 }
 
@@ -495,6 +622,18 @@ mod tests {
         }
         assert!(!overlaps(bar.panels[0], bar.panels[1]));
         assert_eq!(bar.swatches.len(), PALETTE.len());
+        let spectrum = bar.spectrum.unwrap();
+        assert!(spectrum.bottom() <= 1080 && spectrum.right() <= 1920);
+    }
+
+    #[test]
+    fn the_spectrum_runs_from_white_through_hues_to_black() {
+        assert_eq!(spectrum_color(0.0, 0.0), 0xFFFFFF);
+        assert_eq!(spectrum_color(0.0, 0.5), 0xFF0000);
+        assert_eq!(spectrum_color(1.0 / 3.0, 0.5), 0x00FF00);
+        assert_eq!(spectrum_color(2.0 / 3.0, 0.5), 0x0000FF);
+        assert_eq!(spectrum_color(0.5, 1.0), 0x000000);
+        assert_eq!(hex(0x00FF7F), "#00FF7F");
     }
 
     #[test]
@@ -505,6 +644,7 @@ mod tests {
             tool: Some(Tool::Arrow),
             color: PALETTE[0],
             hover: Some(Target::Button(Button::Save)),
+            picking: false,
         };
         bar.draw(&mut buf, 600, &look);
         let tools = bar.panels[0];

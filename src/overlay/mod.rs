@@ -78,6 +78,10 @@ pub struct Overlay {
     modifiers: ModifiersState,
     style: Style,
     palette: bool,
+    /// The eyedropper waits for a click on the screen.
+    picking: bool,
+    /// Text for the clipboard, such as a picked color.
+    copied: Option<String>,
 }
 
 struct Screen {
@@ -130,6 +134,8 @@ impl Overlay {
             modifiers: ModifiersState::empty(),
             style,
             palette: false,
+            picking: false,
+            copied: None,
         };
         // Show every window only after its first frame is drawn, so nothing flickers.
         for i in 0..overlay.screens.len() {
@@ -147,6 +153,11 @@ impl Overlay {
 
     pub fn style(&self) -> Style {
         self.style
+    }
+
+    /// Text the overlay wants on the clipboard, once.
+    pub fn take_copied(&mut self) -> Option<String> {
+        self.copied.take()
     }
 
     /// Handles an event for one of the overlay windows.
@@ -171,7 +182,8 @@ impl Overlay {
     fn redraw(&mut self, index: usize) {
         let style = self.style;
         let palette = self.palette;
-        self.screens[index].redraw(&style, palette);
+        let picking = self.picking;
+        self.screens[index].redraw(&style, palette, picking);
     }
 
     fn request_redraw_all(&self) {
@@ -202,6 +214,11 @@ impl Overlay {
             screen.window.request_redraw();
         }
         screen.update_cursor_icon(&style);
+        if self.picking {
+            // The preview next to the cursor follows it.
+            screen.window.set_cursor(CursorIcon::Crosshair);
+            screen.window.request_redraw();
+        }
     }
 
     fn mouse_input(
@@ -235,6 +252,15 @@ impl Overlay {
     }
 
     fn press(&mut self, index: usize) -> Option<Outcome> {
+        if self.picking {
+            let screen = &mut self.screens[index];
+            let color = screen.pixel_at(screen.cursor);
+            self.picking = false;
+            self.set_color(color);
+            self.copied = Some(toolbar::hex(color));
+            self.request_redraw_all();
+            return None;
+        }
         let target = self.screens[index]
             .toolbar(self.palette)
             .and_then(|bar| bar.hit(self.screens[index].cursor));
@@ -301,11 +327,15 @@ impl Overlay {
         match target {
             Target::Panel => return None,
             Target::Swatch(color) => {
-                self.style.color = color;
                 self.palette = false;
-                if let Some(shape) = screen.live.as_mut() {
-                    shape.color = color;
-                }
+                self.set_color(color);
+            }
+            // The palette stays open to fine-tune the pick.
+            Target::Spectrum(color) => self.set_color(color),
+            Target::Button(Button::Eyedropper) => {
+                self.palette = false;
+                self.picking = true;
+                screen.window.set_cursor(CursorIcon::Crosshair);
             }
             Target::Button(Button::Tool(tool)) => {
                 screen.commit_text();
@@ -322,6 +352,16 @@ impl Overlay {
         }
         self.request_redraw_all();
         None
+    }
+
+    /// Sets the drawing color, for the text being typed too.
+    fn set_color(&mut self, color: u32) {
+        self.style.color = color;
+        for screen in &mut self.screens {
+            if let Some(shape) = screen.live.as_mut() {
+                shape.color = color;
+            }
+        }
     }
 
     /// The wheel sets the stroke width, or the font size for text.
@@ -380,6 +420,18 @@ impl Overlay {
             _ => None,
         };
         match code {
+            KeyCode::Escape if self.picking => {
+                self.picking = false;
+                screen.update_cursor_icon(&style);
+                self.request_redraw_all();
+                None
+            }
+            KeyCode::KeyI if !command && has_selection => {
+                self.picking = !self.picking;
+                self.palette = false;
+                self.request_redraw_all();
+                None
+            }
             KeyCode::Escape if self.palette => {
                 self.palette = false;
                 self.request_redraw_all();
@@ -509,11 +561,12 @@ impl Screen {
         ))
     }
 
-    fn redraw(&mut self, style: &Style, palette: bool) {
+    fn redraw(&mut self, style: &Style, palette: bool, picking: bool) {
         let rect = self.selection.rect();
         let label = rect.map(|r| self.label(r, style)).unwrap_or_default();
         let scale = self.window.scale_factor();
         let toolbar = self.toolbar(palette);
+        let picked = picking.then(|| self.pixel_at(self.cursor));
         if let Some(rect) = rect {
             self.update_layer(rect);
         }
@@ -544,8 +597,12 @@ impl Screen {
                 tool: style.tool,
                 color: style.color,
                 hover: self.hover,
+                picking,
             };
             bar.draw(&mut buffer, width, &look);
+        }
+        if let Some(color) = picked {
+            draw_pick_preview(&mut buffer, width, self.cursor, color, scale);
         }
         if let Err(err) = buffer.present() {
             log::error!("failed to present the overlay: {err}");
@@ -701,6 +758,15 @@ impl Screen {
         (iw > 0 && ih > 0).then_some((x, y, right - x, bottom - y))
     }
 
+    /// The screenshot's color under a window point, as `0xRRGGBB`.
+    fn pixel_at(&self, p: Point) -> u32 {
+        let (iw, ih) = self.image.dimensions();
+        let x = (p.x.max(0) as u64 * iw as u64 / self.frame.width.max(1) as u64) as u32;
+        let y = (p.y.max(0) as u64 * ih as u64 / self.frame.height.max(1) as u64) as u32;
+        let [r, g, b, _] = self.image.get_pixel(x.min(iw - 1), y.min(ih - 1)).0;
+        (r as u32) << 16 | (g as u32) << 8 | b as u32
+    }
+
     /// The selected area with the drawings painted on.
     fn output(&mut self) -> Option<RgbaImage> {
         self.commit_text();
@@ -721,6 +787,52 @@ impl Screen {
     fn output_or_all(&mut self) -> RgbaImage {
         self.output().unwrap_or_else(|| self.image.clone())
     }
+}
+
+/// A small label next to the cursor with the color under it.
+fn draw_pick_preview(buf: &mut [u32], width: i32, cursor: Point, color: u32, scale: f64) {
+    let s = scale as f32;
+    let text = toolbar::hex(color);
+    let size = 12.5 * s;
+    let (tw, th) = crate::font::measure(&text, size);
+    let pad = 6.0 * s;
+    let dot = 14.0 * s;
+    let w = (pad * 3.0 + dot + tw).ceil() as i32;
+    let h = (th.max(dot) + 2.0 * pad).ceil() as i32;
+    let height = buf.len() as i32 / width.max(1);
+    let gap = (18.0 * s) as i32;
+    let mut x = cursor.x + gap;
+    let mut y = cursor.y + gap;
+    if x + w > width {
+        x = cursor.x - gap - w;
+    }
+    if y + h > height {
+        y = cursor.y - gap - h;
+    }
+    let Some(mut pixmap) = Pixmap::new(w as u32, h as u32) else {
+        return;
+    };
+    let full = tiny_skia::Rect::from_xywh(0.0, 0.0, w as f32, h as f32);
+    crate::paint::fill_round(&mut pixmap, full, 6.0 * s, 0x111113, 0.94);
+    let swatch = tiny_skia::Rect::from_xywh(pad, (h as f32 - dot) / 2.0, dot, dot);
+    crate::paint::fill_round(&mut pixmap, swatch, 3.0 * s, 0xFFFFFF, 1.0);
+    let inner = tiny_skia::Rect::from_xywh(
+        pad + s,
+        (h as f32 - dot) / 2.0 + s,
+        dot - 2.0 * s,
+        dot - 2.0 * s,
+    );
+    crate::paint::fill_round(&mut pixmap, inner, 2.5 * s, color, 1.0);
+    crate::font::draw(
+        &mut pixmap,
+        &text,
+        pad * 2.0 + dot,
+        (h as f32 - th) / 2.0,
+        size,
+        0xFFFFFF,
+        1.0,
+    );
+    render::blend_pixmap(buf, width, &pixmap, x, y);
 }
 
 /// Draws the shape in progress, clipped to the selection. Text being typed gets a caret.

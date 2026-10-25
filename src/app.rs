@@ -457,7 +457,13 @@ impl ApplicationHandler<UserEvent> for App {
         if !overlay.owns(id) {
             return;
         }
-        if let Some(outcome) = overlay.window_event(id, event) {
+        let outcome = overlay.window_event(id, event);
+        if let Some(text) = overlay.take_copied() {
+            if let Err(err) = self.output.copy_text(&text) {
+                log::error!("{err:#}");
+            }
+        }
+        if let Some(outcome) = outcome {
             self.finish_capture(outcome);
         }
     }
