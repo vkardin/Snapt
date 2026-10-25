@@ -41,8 +41,8 @@ modules:
     sources:
       - type: git
         url: https://github.com/vkardin/snapt.git
-        tag: v1.3.0
-        commit: 11dd9fa72004df21986c23fea1647d63affca3d8
+        tag: v1.4.0
+        commit: 5b8fd714c5b1904a448a1c30c9a853c5470dbd69
       - cargo-sources.json
       # Kept next to the manifest, so any tagged release builds.
       - type: file

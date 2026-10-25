@@ -23,7 +23,7 @@ use crate::{
     icon,
     paint::{fill_round, rgb},
     platform,
-    settings::{DEFAULT_HOTKEY, Format, Settings},
+    settings::{ColorFormat, Format, Settings, Shortcut},
     tray::hotkey_label,
 };
 
@@ -35,8 +35,9 @@ pub enum Action {
     ReplaceSystem,
     /// The shortcut field started (true) or stopped (false) listening for keys.
     Recording(bool),
-    Hotkey(String),
-    ResetHotkey,
+    Hotkey(Shortcut, String),
+    ResetHotkey(Shortcut),
+    ColorFormat(ColorFormat),
     ChangeFolder,
     OpenFolder,
     Format(Format),
@@ -64,8 +65,9 @@ enum Id {
     Lang(Option<Lang>),
     Autostart,
     ReplaceSystem,
-    Hotkey,
-    ResetHotkey,
+    Hotkey(Shortcut),
+    ResetHotkey(Shortcut),
+    ColorFormat(ColorFormat),
     ChangeFolder,
     OpenFolder,
     Format(Format),
@@ -86,7 +88,7 @@ pub enum Notice {
 }
 
 const WIDTH: f64 = 400.0;
-const HEIGHT: f64 = 440.0;
+const HEIGHT: f64 = 520.0;
 const MARGIN: f32 = 20.0;
 /// The height of one settings row, and of the controls in it.
 const ROW: f32 = 40.0;
@@ -112,7 +114,8 @@ pub struct SettingsWindow {
     cursor: (f32, f32),
     hover: Option<Id>,
     modifiers: ModifiersState,
-    recording: bool,
+    /// The shortcut field listening for keys.
+    recording: Option<Shortcut>,
     menu_open: bool,
     pub notice: Option<Notice>,
     hits: Vec<(Id, SkRect)>,
@@ -144,7 +147,7 @@ impl SettingsWindow {
             cursor: (-1.0, -1.0),
             hover: None,
             modifiers: ModifiersState::empty(),
-            recording: false,
+            recording: None,
             menu_open: false,
             notice: None,
             hits: Vec::new(),
@@ -192,8 +195,8 @@ impl SettingsWindow {
                 self.cursor = (-1.0, -1.0);
                 self.set_hover(None);
             }
-            WindowEvent::Focused(false) if self.recording => {
-                self.recording = false;
+            WindowEvent::Focused(false) if self.recording.is_some() => {
+                self.recording = None;
                 self.window.request_redraw();
                 return Some(Action::Recording(false));
             }
@@ -209,7 +212,7 @@ impl SettingsWindow {
     }
 
     fn close(&mut self) -> Action {
-        self.recording = false;
+        self.recording = None;
         self.menu_open = false;
         self.notice = None;
         self.window.set_visible(false);
@@ -255,22 +258,23 @@ impl SettingsWindow {
         }
         let id = hover?;
         self.window.request_redraw();
-        if self.recording && id != Id::Hotkey {
-            self.recording = false;
+        if !matches!(id, Id::Hotkey(_)) {
+            self.recording = None;
         }
         Some(match id {
             Id::Lang(lang) => Action::Language(lang),
             Id::Autostart => Action::Autostart,
             Id::ReplaceSystem => Action::ReplaceSystem,
-            Id::Hotkey => {
-                self.recording = !self.recording;
+            Id::Hotkey(which) => {
+                self.recording = (self.recording != Some(which)).then_some(which);
                 self.notice = None;
-                Action::Recording(self.recording)
+                Action::Recording(self.recording.is_some())
             }
-            Id::ResetHotkey => {
+            Id::ResetHotkey(which) => {
                 self.notice = None;
-                Action::ResetHotkey
+                Action::ResetHotkey(which)
             }
+            Id::ColorFormat(f) => Action::ColorFormat(f),
             Id::ChangeFolder => Action::ChangeFolder,
             Id::OpenFolder => Action::OpenFolder,
             Id::Format(f) => Action::Format(f),
@@ -293,16 +297,16 @@ impl SettingsWindow {
         let PhysicalKey::Code(code) = event.physical_key else {
             return None;
         };
-        if !self.recording {
+        let Some(which) = self.recording else {
             if code == KeyCode::Escape && self.menu_open {
                 self.menu_open = false;
                 self.window.request_redraw();
                 return None;
             }
             return matches!(code, KeyCode::Escape).then(|| self.close());
-        }
+        };
         if code == KeyCode::Escape {
-            self.recording = false;
+            self.recording = None;
             self.window.request_redraw();
             return Some(Action::Recording(false));
         }
@@ -321,10 +325,10 @@ impl SettingsWindow {
         if modifier_only {
             return None;
         }
-        self.recording = false;
+        self.recording = None;
         self.window.request_redraw();
         match hotkey_from(self.modifiers, code) {
-            Some(hotkey) => Some(Action::Hotkey(hotkey)),
+            Some(hotkey) => Some(Action::Hotkey(which, hotkey)),
             None => {
                 self.notice = Some(Notice::ShortcutInvalid);
                 Some(Action::Recording(false))
@@ -433,7 +437,7 @@ fn build(
     ui: &mut Ui,
     settings: &Settings,
     update: &UpdateStatus,
-    recording: bool,
+    recording: Option<Shortcut>,
     notice: Option<Notice>,
     menu_open: bool,
 ) {
@@ -457,31 +461,40 @@ fn build(
     y += ROW;
     y = ui.divider(y);
 
-    // Shortcut and system takeover
-    ui.label(t(T::Shortcut), left, y + 12.0, 13.0, TEXT);
-    let field = if recording {
-        t(T::PressShortcut).to_string()
-    } else {
-        hotkey_label(&settings.hotkey)
-    };
-    let field_w = 150.0;
-    ui.field(
-        Id::Hotkey,
-        &field,
-        right - field_w,
-        y + 6.0,
-        field_w,
-        recording,
-    );
-    if settings.hotkey != DEFAULT_HOTKEY && !recording {
-        let w = font::measure(t(T::Reset), 12.0).0;
-        ui.link(
-            Id::ResetHotkey,
-            t(T::Reset),
-            right - field_w - 12.0 - w,
-            y + 13.0,
-            12.0,
-        );
+    // Shortcuts, the color format and system takeover
+    for (which, label) in [
+        (Shortcut::Capture, t(T::Shortcut)),
+        (Shortcut::Pick, t(T::PickColor)),
+    ] {
+        ui.label(label, left, y + 12.0, 13.0, TEXT);
+        let active = recording == Some(which);
+        let keys = settings.shortcut(which);
+        let field = if active {
+            t(T::PressShortcut).to_string()
+        } else {
+            hotkey_label(keys)
+        };
+        let field_w = 150.0;
+        let id = Id::Hotkey(which);
+        ui.field(id, &field, right - field_w, y + 6.0, field_w, active);
+        if keys != which.default_keys() && !active {
+            let w = font::measure(t(T::Reset), 12.0).0;
+            let x = right - field_w - 12.0 - w;
+            ui.link(Id::ResetHotkey(which), t(T::Reset), x, y + 13.0, 12.0);
+        }
+        y += ROW;
+    }
+    ui.label(t(T::ColorFormat), left, y + 12.0, 13.0, TEXT);
+    let seg_w = 60.0;
+    let mut x = right - 2.0 * seg_w;
+    for (i, (name, format)) in [("HEX", ColorFormat::Hex), ("RGB", ColorFormat::Rgb)]
+        .iter()
+        .enumerate()
+    {
+        let selected = settings.color_format == *format;
+        let id = Id::ColorFormat(*format);
+        ui.segment(id, name, x, y + 6.0, seg_w, selected, i == 0, i == 1);
+        x += seg_w;
     }
     y += ROW;
     ui.switch(
@@ -858,7 +871,7 @@ mod tests {
                 hits: Vec::new(),
             };
             let update = UpdateStatus::Available("9.9.9".into());
-            build(&mut ui, &Settings::default(), &update, false, None, true);
+            build(&mut ui, &Settings::default(), &update, None, None, true);
             for (id, r) in &ui.hits {
                 assert!(
                     r.left() >= MARGIN - 0.5
@@ -904,7 +917,7 @@ mod tests {
                 &mut ui,
                 &settings,
                 &UpdateStatus::UpToDate,
-                false,
+                None,
                 None,
                 false,
             );

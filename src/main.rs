@@ -10,6 +10,7 @@ mod app;
 mod capture;
 mod crash;
 mod font;
+mod history;
 mod i18n;
 mod icon;
 mod instance;
@@ -17,9 +18,11 @@ mod ocr;
 mod output;
 mod overlay;
 mod paint;
+mod pin;
 mod platform;
 #[cfg(target_os = "linux")]
 mod portal;
+mod scroll;
 mod settings;
 mod settings_window;
 #[cfg(test)]
@@ -34,11 +37,12 @@ use app::{App, UserEvent};
 
 const HELP: &str = "Snapt: a fast, lightweight screenshot tool.
 
-Usage: snapt [--capture | --settings | --logs]
+Usage: snapt [--capture | --pick | --settings | --logs]
 
   --capture   Take a screenshot right away. If Snapt is already running,
               that copy takes it. Bind this to a key where global
               shortcuts don't work, such as on some Wayland desktops.
+  --pick      Pick a color from the screen and copy it.
   --settings  Open the settings window.
   --logs      Open the folder with the log and crash reports.
   --version   Print the version.";
@@ -60,9 +64,17 @@ fn main() -> Result<()> {
         open::that_detached(&dir)?;
         return Ok(());
     }
+    let start = if args.iter().any(|a| a == "--settings") {
+        Some(instance::Request::Settings)
+    } else if args.iter().any(|a| a == "--pick") {
+        Some(instance::Request::Pick)
+    } else if args.iter().any(|a| a == "--capture") {
+        Some(instance::Request::Capture)
+    } else {
+        None
+    };
     // A second copy hands over to the running one, which takes the screenshot.
-    let settings = args.iter().any(|a| a == "--settings");
-    if instance::forward(settings) {
+    if instance::forward(start.unwrap_or(instance::Request::Capture)) {
         return Ok(());
     }
     crash::keep();
@@ -89,11 +101,7 @@ fn main() -> Result<()> {
 
     instance::listen(event_loop.create_proxy());
 
-    let mut app = App::new(
-        args.iter().any(|a| a == "--capture"),
-        settings,
-        event_loop.create_proxy(),
-    )?;
+    let mut app = App::new(start, event_loop.create_proxy())?;
     event_loop.run_app(&mut app)?;
     Ok(())
 }

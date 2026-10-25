@@ -73,7 +73,7 @@ fn overlay(palette: bool) -> RgbaImage {
     let mut layer = Pixmap::new(sel.w as u32, sel.h as u32).unwrap();
     let transform = Transform::from_translate(-sel.x as f32, -sel.y as f32);
     for shape in shapes() {
-        shape.draw(&mut layer, transform);
+        shape.draw(&mut layer, transform, None);
     }
     render::blend_pixmap(&mut buf, W as i32, &layer, sel.x, sel.y);
     render::draw_frame(&mut buf, W as i32, sel, "280 × 170", 1.0);
