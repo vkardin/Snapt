@@ -1,7 +1,7 @@
 //! Snapt: a fast, lightweight, open-source screenshot tool.
 //!
 //! The app lives in the system tray. A global hotkey (PrtSc by default)
-//! captures the screen, copies the shot to the clipboard and saves it to disk.
+//! freezes the screen and lets the user select an area to copy or save.
 
 // Do not open a console window next to the app on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -10,6 +10,7 @@ mod app;
 mod capture;
 mod icon;
 mod output;
+mod overlay;
 mod tray;
 
 use anyhow::Result;

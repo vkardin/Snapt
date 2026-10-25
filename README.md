@@ -14,8 +14,8 @@ No accounts, no cloud, a few megabytes on disk.
 </div>
 
 > [!NOTE]
-> Snapt is in early development. Today it lives in the tray and captures the whole
-> primary screen on PrtSc. Region selection and the editor are next.
+> Snapt is in early development. Today you can select an area and copy or save it.
+> Drawing tools are next.
 
 ## Why Snapt
 
@@ -28,12 +28,27 @@ No accounts, no cloud, a few megabytes on disk.
 
 - [x] Tray icon with a menu
 - [x] Global PrtSc hotkey
-- [x] Copy to clipboard and save as PNG to `Pictures/Snapt`
-- [ ] Region selection across all monitors, HiDPI aware
+- [x] Region selection on every monitor, HiDPI aware
+- [x] Copy to clipboard, save as PNG or JPEG
 - [ ] Editor: pen, line, arrow, rectangle, marker, text, colors, undo
 - [ ] Print and reverse image search
 - [ ] Settings: hotkeys, save folder, image format, start with the system
 - [ ] Installers: `.msi`, `.dmg`, AppImage and Flatpak
+
+## Usage
+
+Press **PrtSc** or pick **Take screenshot** in the tray menu. The screen freezes, then:
+
+| Action | How |
+| --- | --- |
+| Select an area | Drag with the left mouse button |
+| Move or resize it | Drag inside the selection or by its handles |
+| Select the whole screen | `Ctrl+A` |
+| Copy to clipboard | `Ctrl+C`, `Enter` or double-click the selection |
+| Save to a file | `Ctrl+S` |
+| Cancel | `Esc` or right-click |
+
+On macOS, use `Cmd` instead of `Ctrl`.
 
 ## Building from source
 
