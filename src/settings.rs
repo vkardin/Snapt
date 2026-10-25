@@ -29,10 +29,51 @@ impl Format {
     }
 }
 
+/// How a picked color goes to the clipboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorFormat {
+    /// `#1E90FF`
+    Hex,
+    /// `rgb(30, 144, 255)`
+    Rgb,
+}
+
+impl ColorFormat {
+    pub fn format(self, color: u32) -> String {
+        let [r, g, b] = crate::paint::rgb(color);
+        match self {
+            ColorFormat::Hex => format!("#{:06X}", color & 0xFFFFFF),
+            ColorFormat::Rgb => format!("rgb({r}, {g}, {b})"),
+        }
+    }
+}
+
+/// The two global shortcuts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shortcut {
+    Capture,
+    /// The color picker.
+    Pick,
+}
+
+impl Shortcut {
+    pub const ALL: [Shortcut; 2] = [Shortcut::Capture, Shortcut::Pick];
+
+    pub fn default_keys(self) -> &'static str {
+        match self {
+            Shortcut::Capture => DEFAULT_HOTKEY,
+            Shortcut::Pick => DEFAULT_PICK_HOTKEY,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     /// The capture shortcut, as `global_hotkey` parses it, e.g. `Ctrl+Shift+S`.
     pub hotkey: String,
+    /// The color picker's shortcut.
+    pub pick_hotkey: String,
+    pub color_format: ColorFormat,
     pub folder: PathBuf,
     pub format: Format,
     /// Save straight into `folder` instead of asking where.
@@ -61,11 +102,14 @@ pub const DEFAULT_FILE_NAME: &str = "Snapt_%Y-%m-%d_%H-%M-%S";
 pub const DEFAULT_HOTKEY: &str = "Cmd+Shift+9";
 #[cfg(not(target_os = "macos"))]
 pub const DEFAULT_HOTKEY: &str = "PrintScreen";
+pub const DEFAULT_PICK_HOTKEY: &str = "Ctrl+Alt+C";
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             hotkey: DEFAULT_HOTKEY.into(),
+            pick_hotkey: DEFAULT_PICK_HOTKEY.into(),
+            color_format: ColorFormat::Hex,
             folder: default_folder(),
             format: Format::Png,
             quick_save: false,
@@ -86,6 +130,20 @@ impl Settings {
     /// The language the interface shows.
     pub fn lang(&self) -> Lang {
         self.language.unwrap_or_else(Lang::system)
+    }
+
+    pub fn shortcut(&self, which: Shortcut) -> &str {
+        match which {
+            Shortcut::Capture => &self.hotkey,
+            Shortcut::Pick => &self.pick_hotkey,
+        }
+    }
+
+    pub fn shortcut_mut(&mut self, which: Shortcut) -> &mut String {
+        match which {
+            Shortcut::Capture => &mut self.hotkey,
+            Shortcut::Pick => &mut self.pick_hotkey,
+        }
     }
 
     pub fn path() -> Option<PathBuf> {
@@ -126,6 +184,13 @@ impl Settings {
             let value = value.trim();
             match key.trim() {
                 "hotkey" if !value.is_empty() => s.hotkey = value.into(),
+                "pick_hotkey" if !value.is_empty() => s.pick_hotkey = value.into(),
+                "color_format" => {
+                    s.color_format = match value.to_ascii_lowercase().as_str() {
+                        "rgb" => ColorFormat::Rgb,
+                        _ => ColorFormat::Hex,
+                    }
+                }
                 "folder" if !value.is_empty() => s.folder = PathBuf::from(value),
                 "format" => {
                     s.format = match value.to_ascii_lowercase().as_str() {
@@ -160,6 +225,12 @@ impl Settings {
             "# hotkey examples: PrintScreen, Ctrl+Shift+S, Cmd+Shift+9"
         );
         let _ = writeln!(t, "hotkey = {}", self.hotkey);
+        let _ = writeln!(t, "pick_hotkey = {}", self.pick_hotkey);
+        let format = match self.color_format {
+            ColorFormat::Hex => "hex",
+            ColorFormat::Rgb => "rgb",
+        };
+        let _ = writeln!(t, "color_format = {format}");
         let _ = writeln!(t, "folder = {}", self.folder.display());
         let _ = writeln!(t, "format = {}", self.format.extension());
         let _ = writeln!(t, "quick_save = {}", self.quick_save);
@@ -303,6 +374,8 @@ mod tests {
     fn settings_survive_a_round_trip() {
         let s = Settings {
             hotkey: "Ctrl+Shift+S".into(),
+            pick_hotkey: "Alt+P".into(),
+            color_format: ColorFormat::Rgb,
             folder: PathBuf::from("/tmp/shots"),
             format: Format::Jpeg,
             quick_save: true,
@@ -326,11 +399,20 @@ mod tests {
     }
 
     #[test]
-    fn the_default_hotkey_parses() {
-        assert!(
-            DEFAULT_HOTKEY
-                .parse::<global_hotkey::hotkey::HotKey>()
-                .is_ok()
-        );
+    fn the_default_hotkeys_parse() {
+        for which in Shortcut::ALL {
+            assert!(
+                which
+                    .default_keys()
+                    .parse::<global_hotkey::hotkey::HotKey>()
+                    .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn colors_format_as_hex_or_rgb() {
+        assert_eq!(ColorFormat::Hex.format(0x1E90FF), "#1E90FF");
+        assert_eq!(ColorFormat::Rgb.format(0x1E90FF), "rgb(30, 144, 255)");
     }
 }
