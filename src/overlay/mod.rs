@@ -28,7 +28,7 @@ use winit::{
     window::{CursorIcon, Window, WindowId, WindowLevel},
 };
 
-use crate::capture::Shot;
+use crate::capture::{Bounds, Shot};
 use crate::i18n::{T, t};
 use annotate::{Canvas, Kind, Shape};
 use render::Frame;
@@ -120,6 +120,10 @@ struct Screen {
     /// Finished shapes rendered for the current selection.
     layer: Option<Layer>,
     hover: Option<Target>,
+    /// The other apps' windows, front to back, in image pixels.
+    windows: Vec<Bounds>,
+    /// The window under the cursor, outlined until a selection is made.
+    snap: Option<Rect>,
 }
 
 struct Layer {
@@ -147,7 +151,7 @@ impl Overlay {
                 log::warn!("no screenshot for monitor {:?}", monitor.name());
                 continue;
             };
-            match Screen::new(event_loop, &context, &monitor, shot.image) {
+            match Screen::new(event_loop, &context, &monitor, shot) {
                 Ok(screen) => screens.push(screen),
                 Err(err) => log::error!("failed to open an overlay: {err:#}"),
             }
@@ -276,6 +280,11 @@ impl Overlay {
             screen.hover = hover;
             screen.window.request_redraw();
         }
+        let snap = screen.snap_target(self.picking);
+        if snap != screen.snap {
+            screen.snap = snap;
+            screen.window.request_redraw();
+        }
         screen.update_cursor_icon(&style);
         if self.picking {
             // The preview next to the cursor follows it.
@@ -304,6 +313,13 @@ impl Overlay {
                     }
                 } else {
                     screen.selection.release(screen.cursor);
+                    // A click selects the window under it.
+                    if screen.selection.rect().is_none()
+                        && let Some(rect) = screen.window_at(screen.cursor)
+                    {
+                        screen.selection.set(rect);
+                    }
+                    screen.snap = None;
                 }
                 screen.update_cursor_icon(&style);
                 screen.window.request_redraw();
@@ -563,8 +579,9 @@ impl Screen {
         event_loop: &ActiveEventLoop,
         context: &softbuffer::Context<OwnedDisplayHandle>,
         monitor: &MonitorHandle,
-        image: RgbaImage,
+        shot: Shot,
     ) -> Result<Self> {
+        let Shot { image, windows, .. } = shot;
         let attributes = Window::default_attributes()
             .with_title("Snapt")
             .with_decorations(false)
@@ -604,6 +621,8 @@ impl Screen {
             drawing: false,
             layer: None,
             hover: None,
+            windows,
+            snap: None,
         };
         screen.resize(size);
         Ok(screen)
@@ -642,7 +661,7 @@ impl Screen {
     }
 
     fn redraw(&mut self, style: &Style, palette: bool, picking: bool, status: Option<&str>) {
-        let rect = self.selection.rect();
+        let rect = self.selection.rect().or(self.snap);
         let label = rect.map(|r| self.label(r, style)).unwrap_or_default();
         let scale = self.window.scale_factor();
         let toolbar = self.toolbar(palette);
@@ -690,6 +709,40 @@ impl Screen {
         if let Err(err) = buffer.present() {
             log::error!("failed to present the overlay: {err}");
         }
+    }
+
+    /// The window to outline under the cursor: only while nothing is selected or drawn.
+    fn snap_target(&self, picking: bool) -> Option<Rect> {
+        if picking
+            || self.selection.rect().is_some()
+            || self.selection.is_dragging()
+            || !self.canvas.is_empty()
+        {
+            return None;
+        }
+        self.window_at(self.cursor)
+    }
+
+    /// The front-most window under `p`, in window pixels.
+    fn window_at(&self, p: Point) -> Option<Rect> {
+        let (iw, ih) = self.image.dimensions();
+        let sx = iw as f64 / self.frame.width as f64;
+        let sy = ih as f64 / self.frame.height as f64;
+        let (x, y) = ((p.x as f64 * sx) as i32, (p.y as f64 * sy) as i32);
+        let b = self
+            .windows
+            .iter()
+            .find(|b| x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h)?;
+        let left = (b.x as f64 / sx).round() as i32;
+        let top = (b.y as f64 / sy).round() as i32;
+        let right = ((b.x + b.w) as f64 / sx).round() as i32;
+        let bottom = ((b.y + b.h) as f64 / sy).round() as i32;
+        (right > left && bottom > top).then_some(Rect {
+            x: left,
+            y: top,
+            w: right - left,
+            h: bottom - top,
+        })
     }
 
     /// The size of the selection in image pixels, plus the stroke width while drawing.
