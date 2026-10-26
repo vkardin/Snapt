@@ -84,15 +84,21 @@ impl Output {
         video.keep(&path).map(Some)
     }
 
-    pub fn save(&mut self, shot: &RgbaImage, settings: &mut Settings) -> Result<Option<PathBuf>> {
+    /// Saves `shot` in the screenshots folder, under a new name, without asking.
+    pub fn save_to_folder(&mut self, shot: &RgbaImage, settings: &Settings) -> Result<PathBuf> {
         let name = file_name(Local::now(), &settings.file_name, settings.format);
+        fs::create_dir_all(&settings.folder)
+            .with_context(|| format!("failed to create {}", settings.folder.display()))?;
+        let path = unique_path(&settings.folder, &name);
+        save(shot, &path)?;
+        Ok(path)
+    }
+
+    pub fn save(&mut self, shot: &RgbaImage, settings: &mut Settings) -> Result<Option<PathBuf>> {
         if settings.quick_save {
-            fs::create_dir_all(&settings.folder)
-                .with_context(|| format!("failed to create {}", settings.folder.display()))?;
-            let path = unique_path(&settings.folder, &name);
-            save(shot, &path)?;
-            return Ok(Some(path));
+            return self.save_to_folder(shot, settings).map(Some);
         }
+        let name = file_name(Local::now(), &settings.file_name, settings.format);
 
         // Best effort: the dialog still works if the default folder can't be created.
         let _ = fs::create_dir_all(&settings.folder);
