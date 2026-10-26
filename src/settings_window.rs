@@ -43,6 +43,8 @@ pub enum Action {
     OpenFolder,
     Format(Format),
     QuickSave,
+    SaveOnCopy,
+    OpenAfterSave,
     AutoUpdate,
     CheckUpdates,
     InstallUpdate,
@@ -83,6 +85,8 @@ enum Id {
     OpenFolder,
     Format(Format),
     QuickSave,
+    SaveOnCopy,
+    OpenAfterSave,
     AutoUpdate,
     CheckUpdates,
     InstallUpdate,
@@ -99,7 +103,7 @@ pub enum Notice {
 }
 
 const WIDTH: f64 = 400.0;
-const HEIGHT: f64 = 540.0;
+const HEIGHT: f64 = 600.0;
 const MARGIN: f32 = 20.0;
 /// The height of one settings row, and of the controls in it.
 const ROW: f32 = 40.0;
@@ -300,6 +304,8 @@ impl SettingsWindow {
             Id::OpenFolder => Action::OpenFolder,
             Id::Format(f) => Action::Format(f),
             Id::QuickSave => Action::QuickSave,
+            Id::SaveOnCopy => Action::SaveOnCopy,
+            Id::OpenAfterSave => Action::OpenAfterSave,
             Id::AutoUpdate => Action::AutoUpdate,
             Id::CheckUpdates => Action::CheckUpdates,
             Id::InstallUpdate => Action::InstallUpdate,
@@ -659,6 +665,11 @@ fn general(
     }
     y += ROW;
     ui.switch(Id::QuickSave, t(T::QuickSave), y, settings.quick_save);
+    y += ROW;
+    ui.switch(Id::SaveOnCopy, t(T::SaveOnCopy), y, settings.save_on_copy);
+    y += ROW;
+    let open = settings.open_after_save;
+    ui.switch(Id::OpenAfterSave, t(T::OpenAfterSave), y, open);
     y + ROW
 }
 
