@@ -284,8 +284,10 @@ impl Toolbar {
     }
 
     /// Draws the panels into a `0RGB` buffer `width` pixels wide.
-    pub fn draw(&self, buf: &mut [u32], width: i32, look: &Look) {
+    /// Draws the panels and returns where.
+    pub fn draw(&self, buf: &mut [u32], width: i32, look: &Look) -> Option<Rect> {
         let s = self.scale as f32;
+        let mut drawn = None;
         for (n, panel) in self.panels.iter().enumerate() {
             let Some(mut pixmap) = Pixmap::new(panel.w as u32, panel.h as u32) else {
                 continue;
@@ -378,18 +380,18 @@ impl Toolbar {
                     icon(&mut pixmap, b, look.color, transform);
                 }
             }
-            render::blend_pixmap(buf, width, &pixmap, panel.x, panel.y);
+            let at = render::blend_pixmap(buf, width, &pixmap, panel.x, panel.y);
+            drawn = render::union(drawn, at);
         }
 
         if let Some(Target::Button(b)) = look.hover {
-            self.draw_tooltip(buf, width, b);
+            drawn = render::union(drawn, self.draw_tooltip(buf, width, b));
         }
+        drawn
     }
 
-    fn draw_tooltip(&self, buf: &mut [u32], width: i32, button: Button) {
-        let Some(&(_, r)) = self.buttons.iter().find(|(b, _)| *b == button) else {
-            return;
-        };
+    fn draw_tooltip(&self, buf: &mut [u32], width: i32, button: Button) -> Option<Rect> {
+        let &(_, r) = self.buttons.iter().find(|(b, _)| *b == button)?;
         let height = buf.len() as i32 / width.max(1);
         let s = self.scale as f32;
         let text = button.tooltip();
@@ -421,9 +423,7 @@ impl Toolbar {
         };
         let x = x.clamp(0, (width - w).max(0));
         let y = y.clamp(0, (height - h).max(0));
-        let Some(mut pixmap) = Pixmap::new(w as u32, h as u32) else {
-            return;
-        };
+        let mut pixmap = Pixmap::new(w as u32, h as u32)?;
         fill_round(
             &mut pixmap,
             SkRect::from_xywh(0.0, 0.0, w as f32, h as f32),
@@ -432,7 +432,7 @@ impl Toolbar {
             0.94,
         );
         font::draw(&mut pixmap, &text, pad_x, pad_y, size, 0xFFFFFF, 1.0);
-        render::blend_pixmap(buf, width, &pixmap, x, y);
+        render::blend_pixmap(buf, width, &pixmap, x, y)
     }
 }
 
