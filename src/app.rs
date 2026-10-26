@@ -94,6 +94,7 @@ impl App {
             color: settings.color,
             stroke: settings.stroke,
             text_size: settings.text_size,
+            fill: false,
         };
         let mut app = Self {
             hotkeys,
