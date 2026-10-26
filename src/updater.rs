@@ -3,7 +3,8 @@
 //! The latest release is read from the GitHub API and the installer for this
 //! system is downloaded and started. Network access goes through the system's
 //! `curl` (built into Windows 10+, macOS and most Linux desktops), so Snapt
-//! carries no HTTP or TLS code.
+//! carries no HTTP or TLS code. A download runs only once its SHA-256 matches
+//! the release's `SHA256SUMS.txt`.
 
 use std::{
     path::{Path, PathBuf},
@@ -28,6 +29,8 @@ pub struct Update {
     /// The installer for this system, or `None` when it has to be installed by
     /// hand, as with the `.deb` package.
     pub asset: Option<String>,
+    /// The release's `SHA256SUMS.txt`.
+    pub checksums: Option<String>,
 }
 
 /// Checks for updates in the background: shortly after start, then daily.
@@ -66,7 +69,13 @@ pub fn download(proxy: EventLoopProxy<UserEvent>, update: Update) {
             .asset
             .as_deref()
             .context("no installer for this system")
-            .and_then(fetch_installer)
+            .and_then(|asset| {
+                let sums = update
+                    .checksums
+                    .as_deref()
+                    .context("the release has no checksums")?;
+                fetch_installer(asset, sums)
+            })
             .map_err(|err| format!("{err:#}"));
         let _ = proxy.send_event(UserEvent::UpdateDownloaded(result));
     });
@@ -86,6 +95,10 @@ fn check() -> Result<Option<Update>> {
     let assets = json_strings(&json, "browser_download_url");
     Ok(Some(Update {
         asset: pick_asset(&assets).map(str::to_string),
+        checksums: assets
+            .iter()
+            .find(|u| u.ends_with("/SHA256SUMS.txt"))
+            .cloned(),
         version,
     }))
 }
@@ -124,8 +137,11 @@ fn pick_asset(urls: &[String]) -> Option<&str> {
         .find(|u| u.ends_with(suffix))
 }
 
-fn fetch_installer(url: &str) -> Result<PathBuf> {
+fn fetch_installer(url: &str, sums_url: &str) -> Result<PathBuf> {
     let name = url.rsplit('/').next().unwrap_or("snapt-update");
+    let sums = curl_text(sums_url)?;
+    let expected = expected_sum(&sums, name)
+        .with_context(|| format!("no checksum for {name} in the release"))?;
     let dir = std::env::temp_dir().join("snapt-update");
     std::fs::create_dir_all(&dir).context("failed to create a download folder")?;
     let path = dir.join(name);
@@ -136,7 +152,37 @@ fn fetch_installer(url: &str) -> Result<PathBuf> {
         .status()
         .context("failed to run curl")?;
     ensure!(status.success(), "download failed: {status}");
+    let actual = file_sum(&path)?;
+    if !actual.eq_ignore_ascii_case(expected) {
+        let _ = std::fs::remove_file(&path);
+        bail!("the download of {name} is damaged: its SHA-256 does not match the release");
+    }
     Ok(path)
+}
+
+/// The hash of `name` in `sha256sum` output: `<hex>  <name>`, or `<hex> *<name>` for binary mode.
+fn expected_sum<'a>(sums: &'a str, name: &str) -> Option<&'a str> {
+    sums.lines().find_map(|line| {
+        let (hash, file) = line.trim().split_once(char::is_whitespace)?;
+        let file = file.trim_start().trim_start_matches('*');
+        (file == name && hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()))
+            .then_some(hash)
+    })
+}
+
+fn file_sum(path: &Path) -> Result<String> {
+    use std::io::Read;
+
+    let mut file = std::fs::File::open(path).context("failed to open the download")?;
+    let mut hasher = crate::sha256::Sha256::new();
+    let mut buf = vec![0; 1 << 16];
+    loop {
+        let n = file.read(&mut buf).context("failed to read the download")?;
+        if n == 0 {
+            return Ok(hasher.hex());
+        }
+        hasher.update(&buf[..n]);
+    }
 }
 
 /// Starts installing the downloaded file. Snapt quits right after, so the
@@ -316,5 +362,32 @@ mod tests {
         if cfg!(target_os = "windows") {
             assert!(pick_asset(&urls).unwrap().ends_with("setup.exe"));
         }
+    }
+
+    #[test]
+    fn finds_the_checksum_of_an_asset() {
+        let a = "a".repeat(64);
+        let b = "B".repeat(64);
+        let sums =
+            format!("{a}  snapt_2.1.0_x64-setup.exe\n{b} *Snapt_2.1.0_x64.dmg\nbroken line\n");
+        assert_eq!(
+            expected_sum(&sums, "snapt_2.1.0_x64-setup.exe"),
+            Some(a.as_str())
+        );
+        assert_eq!(expected_sum(&sums, "Snapt_2.1.0_x64.dmg"), Some(b.as_str()));
+        assert_eq!(expected_sum(&sums, "x64-setup.exe"), None);
+        assert_eq!(expected_sum("short  file", "file"), None);
+    }
+
+    #[test]
+    fn hashes_a_file() {
+        let path = std::env::temp_dir().join(format!("snapt-sum-{}", std::process::id()));
+        std::fs::write(&path, b"abc").unwrap();
+        let sum = file_sum(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(
+            sum,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 }
