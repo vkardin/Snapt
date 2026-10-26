@@ -1,6 +1,6 @@
 # Maintainer: vkardin <63503018+vkardin@users.noreply.github.com>
 pkgname=snapt-bin
-pkgver=2.0.0
+pkgver=2.1.0
 pkgrel=1
 pkgdesc="Fast, lightweight, open-source screenshot tool (prebuilt)"
 arch=('x86_64')
@@ -16,7 +16,7 @@ provides=('snapt')
 conflicts=('snapt')
 source=("https://github.com/vkardin/snapt/releases/download/v${pkgver}/snapt_${pkgver}_amd64.deb"
         "LICENSE-${pkgver}::https://raw.githubusercontent.com/vkardin/snapt/v${pkgver}/LICENSE")
-sha256sums=('ae4612229ea28f48e6f8f2bf9aa0d8b7f98835f44c919d090370a0354b18f7d2'
+sha256sums=('eb58d4eba900eb37668ed9950d6067ac4e40f3b0dec8ddf7ef4e5fbdd063d5ab'
             '3f3314be021ff5b67237b928b4e444c58345e5463a698301a13a6aa044eac75c')
 
 package() {

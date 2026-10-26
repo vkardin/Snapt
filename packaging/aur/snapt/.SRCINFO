@@ -1,6 +1,6 @@
 pkgbase = snapt
 	pkgdesc = Fast, lightweight, open-source screenshot tool
-	pkgver = 2.0.0
+	pkgver = 2.1.0
 	pkgrel = 1
 	url = https://github.com/vkardin/snapt
 	arch = x86_64
@@ -22,7 +22,7 @@ pkgbase = snapt
 	optdepends = tesseract-data-rus: Russian text recognition
 	optdepends = tesseract-data-ukr: Ukrainian text recognition
 	optdepends = xdg-desktop-portal: screenshots and the shortcut on Wayland
-	source = snapt-2.0.0.tar.gz::https://github.com/vkardin/snapt/archive/refs/tags/v2.0.0.tar.gz
-	sha256sums = 6626ba4a869c164b7f17e2f7be8f1809b36bf82971fa41d2ac495eefd62bb224
+	source = snapt-2.1.0.tar.gz::https://github.com/vkardin/snapt/archive/refs/tags/v2.1.0.tar.gz
+	sha256sums = 84850bbe566d9d84c763467019f0b4f5f4142bf3515a32cce722699ac3ef90a5
 
 pkgname = snapt
