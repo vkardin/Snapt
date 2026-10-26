@@ -12,6 +12,7 @@ mod snapshots;
 mod toolbar;
 
 use std::{
+    cell::Cell,
     num::NonZeroU32,
     rc::Rc,
     time::{Duration, Instant},
@@ -143,6 +144,12 @@ struct Screen {
     windows: Vec<Bounds>,
     /// The window under the cursor, outlined until a selection is made.
     snap: Option<Rect>,
+    /// What the last frame drew over the dimmed screen, bright part included,
+    /// or `None` when the next frame has to be drawn whole.
+    drawn: Option<Rect>,
+    /// A redraw was asked for by Snapt, not by the system repainting the window,
+    /// so only what changed needs drawing.
+    asked: Cell<bool>,
 }
 
 struct Layer {
@@ -280,7 +287,7 @@ impl Overlay {
 
     fn request_redraw_all(&self) {
         for screen in &self.screens {
-            screen.window.request_redraw();
+            screen.request_redraw();
         }
     }
 
@@ -299,36 +306,36 @@ impl Overlay {
             let (dx, dy) = (screen.cursor.x - last.x, screen.cursor.y - last.y);
             screen.canvas.translate(i, dx as f32, dy as f32);
             screen.moving = Some((screen.cursor, true));
-            screen.window.request_redraw();
+            screen.request_redraw();
         } else if screen.drawing {
             if let Some(shape) = &mut screen.live {
                 shape.drag_to(screen.cursor.into(), straight);
-                screen.window.request_redraw();
+                screen.request_redraw();
             }
         } else if screen.selection.motion(screen.cursor) {
-            screen.window.request_redraw();
+            screen.request_redraw();
         }
         let hover = screen
             .toolbar(palette)
             .and_then(|bar| bar.hit(screen.cursor));
         if hover != screen.hover {
             screen.hover = hover;
-            screen.window.request_redraw();
+            screen.request_redraw();
         }
         let snap = screen.snap_target(self.picking);
         if snap != screen.snap {
             screen.snap = snap;
-            screen.window.request_redraw();
+            screen.request_redraw();
         }
         screen.update_cursor_icon(&style);
         if self.picking {
             // The preview next to the cursor follows it.
             screen.window.set_cursor(CursorIcon::Crosshair);
-            screen.window.request_redraw();
+            screen.request_redraw();
         }
         if screen.selection.rect().is_none() {
             // So does the magnifier before a selection.
-            screen.window.request_redraw();
+            screen.request_redraw();
         }
     }
 
@@ -362,7 +369,7 @@ impl Overlay {
                     screen.snap = None;
                 }
                 screen.update_cursor_icon(&style);
-                screen.window.request_redraw();
+                screen.request_redraw();
             }
             (MouseButton::Right, ElementState::Pressed) => return Some(Outcome::Cancel),
             _ => {}
@@ -404,13 +411,13 @@ impl Overlay {
                 other.canvas.clear();
                 other.selected = None;
                 other.live = None;
-                other.window.request_redraw();
+                other.request_redraw();
             }
         }
 
         let style = self.style;
         let screen = &mut self.screens[index];
-        screen.window.request_redraw();
+        screen.request_redraw();
         let hit = screen.selection.hit(screen.cursor, screen.grip());
         screen.commit_text();
         screen.selected = None;
@@ -532,7 +539,7 @@ impl Overlay {
         } else {
             self.style.stroke = (self.style.stroke + steps).clamp(*STROKES.start(), *STROKES.end());
         }
-        screen.window.request_redraw();
+        screen.request_redraw();
     }
 
     fn key(&mut self, index: usize, event: KeyEvent) -> Option<Outcome> {
@@ -545,7 +552,7 @@ impl Overlay {
 
         if screen.is_typing() && !command {
             screen.type_key(&event);
-            screen.window.request_redraw();
+            screen.request_redraw();
             return None;
         }
 
@@ -615,7 +622,7 @@ impl Overlay {
             KeyCode::KeyA if command => {
                 screen.commit_text();
                 screen.selection.select_all();
-                screen.window.request_redraw();
+                screen.request_redraw();
                 None
             }
             KeyCode::KeyZ if command && self.modifiers.shift_key() => {
@@ -634,7 +641,7 @@ impl Overlay {
                 if let Some(i) = screen.selected.take() {
                     screen.canvas.remove(i);
                 }
-                screen.window.request_redraw();
+                screen.request_redraw();
                 None
             }
             _ if !command && has_selection && tool.is_some() => {
@@ -713,6 +720,8 @@ impl Screen {
             hover: None,
             windows,
             snap: None,
+            drawn: None,
+            asked: Cell::new(false),
         };
         screen.resize(size);
         Ok(screen)
@@ -732,6 +741,12 @@ impl Screen {
             self.canvas.clear();
             self.live = None;
         }
+        self.drawn = None;
+        self.request_redraw();
+    }
+
+    fn request_redraw(&self) {
+        self.asked.set(true);
         self.window.request_redraw();
     }
 
@@ -798,11 +813,20 @@ impl Screen {
             w: self.frame.width as i32,
             h: self.frame.height as i32,
         };
-        render::draw(
-            &mut buffer,
-            &self.frame,
-            if pick_only { Some(full) } else { rect },
-        );
+        let bright = if pick_only { Some(full) } else { rect };
+        // When the buffer still holds the last frame, only the parts drawn then
+        // or now change; on a 4K screen that saves copying and sending ~33 MB a frame.
+        let asked = self.asked.replace(false);
+        let last = self.drawn.filter(|_| asked && buffer.age() == 1);
+        let restored = last.map(|last| {
+            let area = render::union(Some(last), bright).unwrap_or(last);
+            render::restore(&mut buffer, &self.frame, bright, area);
+            area
+        });
+        if restored.is_none() {
+            render::draw(&mut buffer, &self.frame, bright);
+        }
+        let mut drawn = bright;
         if let Some(rect) = rect {
             if let Some(layer) = &self.layer {
                 render::blend_pixmap(&mut buffer, width, &layer.pixmap, rect.x, rect.y);
@@ -816,7 +840,8 @@ impl Screen {
             if let Some(shape) = &self.live {
                 draw_live(&mut buffer, width, rect, shape, !self.drawing, scale);
             }
-            render::draw_frame(&mut buffer, width, rect, &label, scale);
+            let frame = render::draw_frame(&mut buffer, width, rect, &label, scale);
+            drawn = render::union(drawn, Some(frame));
         }
         if let Some(bar) = toolbar {
             let look = Look {
@@ -825,16 +850,37 @@ impl Screen {
                 hover: self.hover,
                 picking,
             };
-            bar.draw(&mut buffer, width, &look);
+            drawn = render::union(drawn, bar.draw(&mut buffer, width, &look));
         }
         if let Some(status) = status {
-            draw_status(&mut buffer, width, status, scale);
+            drawn = render::union(drawn, draw_status(&mut buffer, width, status, scale));
         }
         if let Some((grid, text)) = &magnifier {
-            draw_magnifier(&mut buffer, width, self.cursor, grid, text, scale);
+            let at = draw_magnifier(&mut buffer, width, self.cursor, grid, text, scale);
+            drawn = render::union(drawn, at);
         }
-        if let Err(err) = buffer.present() {
+        let damage = restored
+            .and_then(|area| render::union(Some(area), drawn))
+            .and_then(|area| render::clip(area, width, self.frame.height as i32));
+        // A 1×1 stand-in when nothing at all is drawn, so the next frame can be partial too.
+        self.drawn = Some(drawn.unwrap_or(Rect {
+            x: 0,
+            y: 0,
+            w: 1,
+            h: 1,
+        }));
+        let presented = match (restored, damage) {
+            (Some(_), Some(d)) => buffer.present_with_damage(&[softbuffer::Rect {
+                x: d.x as u32,
+                y: d.y as u32,
+                width: NonZeroU32::new(d.w as u32).unwrap_or(NonZeroU32::MIN),
+                height: NonZeroU32::new(d.h as u32).unwrap_or(NonZeroU32::MIN),
+            }]),
+            _ => buffer.present(),
+        };
+        if let Err(err) = presented {
             log::error!("failed to present the overlay: {err}");
+            self.drawn = None;
         }
     }
 
@@ -1007,14 +1053,14 @@ impl Screen {
         } else {
             self.canvas.undo();
         }
-        self.window.request_redraw();
+        self.request_redraw();
     }
 
     fn redo(&mut self) {
         self.selected = None;
         self.commit_text();
         self.canvas.redo();
-        self.window.request_redraw();
+        self.request_redraw();
     }
 
     /// Converts a window rectangle into image pixels: (x, y, width, height).
@@ -1117,21 +1163,19 @@ impl Screen {
 }
 
 /// A message at the top middle of the screen.
-fn draw_status(buf: &mut [u32], width: i32, text: &str, scale: f64) {
+fn draw_status(buf: &mut [u32], width: i32, text: &str, scale: f64) -> Option<Rect> {
     let s = scale as f32;
     let size = 14.0 * s;
     let (tw, th) = crate::font::measure(text, size);
     let (pad_x, pad_y) = (14.0 * s, 9.0 * s);
     let w = (tw + 2.0 * pad_x).ceil() as i32;
     let h = (th + 2.0 * pad_y).ceil() as i32;
-    let Some(mut pixmap) = Pixmap::new(w as u32, h as u32) else {
-        return;
-    };
+    let mut pixmap = Pixmap::new(w as u32, h as u32)?;
     let full = tiny_skia::Rect::from_xywh(0.0, 0.0, w as f32, h as f32);
     crate::paint::fill_round(&mut pixmap, full, 8.0 * s, 0x111113, 0.94);
     crate::font::draw(&mut pixmap, text, pad_x, pad_y, size, 0xFFFFFF, 1.0);
     let x = ((width - w) / 2).max(0);
-    render::blend_pixmap(buf, width, &pixmap, x, (24.0 * s) as i32);
+    render::blend_pixmap(buf, width, &pixmap, x, (24.0 * s) as i32)
 }
 
 /// Pixels around the cursor, zoomed, with the color under it as text.
@@ -1142,7 +1186,7 @@ fn draw_magnifier(
     grid: &[u32],
     text: &str,
     scale: f64,
-) {
+) -> Option<Rect> {
     let s = scale as f32;
     let n = (grid.len() as f64).sqrt() as i32;
     let cell = (9.0 * s).round().max(1.0) as i32;
@@ -1162,9 +1206,7 @@ fn draw_magnifier(
     if y + h > height {
         y = cursor.y - gap - h;
     }
-    let Some(mut pixmap) = Pixmap::new(w as u32, h as u32) else {
-        return;
-    };
+    let mut pixmap = Pixmap::new(w as u32, h as u32)?;
     let full = tiny_skia::Rect::from_xywh(0.0, 0.0, w as f32, h as f32);
     crate::paint::fill_round(&mut pixmap, full, 8.0 * s, 0x111113, 0.96);
     let left = (w - zoom) / 2;
@@ -1212,7 +1254,7 @@ fn draw_magnifier(
         0xFFFFFF,
         1.0,
     );
-    render::blend_pixmap(buf, width, &pixmap, x, y);
+    render::blend_pixmap(buf, width, &pixmap, x, y)
 }
 
 /// The `global_hotkey` key for a winit key; both use the W3C key names.

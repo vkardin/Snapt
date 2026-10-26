@@ -71,9 +71,68 @@ pub fn draw(buf: &mut [u32], frame: &Frame, selection: Option<Rect>) {
     }
 }
 
-/// Draws the selection border, its grips and the size `label`.
-/// `scale` is the monitor's scale factor.
-pub fn draw_frame(buf: &mut [u32], width: i32, rect: Rect, label: &str, scale: f64) {
+/// Puts the dimmed screen and the bright `selection` back, only inside `area`.
+/// A redraw that changed just part of the screen starts with this instead of `draw`.
+pub fn restore(buf: &mut [u32], frame: &Frame, selection: Option<Rect>, area: Rect) {
+    let w = frame.width as i32;
+    let Some(area) = clip(area, w, frame.height as i32) else {
+        return;
+    };
+    let bright = selection.and_then(|s| intersect(s, area));
+    for y in area.y..area.bottom() {
+        let row = (y * w) as usize;
+        let range = row + area.x as usize..row + area.right() as usize;
+        buf[range.clone()].copy_from_slice(&frame.dim[range]);
+        if let Some(b) = bright.filter(|b| y >= b.y && y < b.bottom()) {
+            let range = row + b.x as usize..row + b.right() as usize;
+            buf[range.clone()].copy_from_slice(&frame.bright[range]);
+        }
+    }
+}
+
+/// The smallest rectangle around both; `None` stands for nothing.
+pub fn union(a: Option<Rect>, b: Option<Rect>) -> Option<Rect> {
+    match (a, b) {
+        (Some(a), Some(b)) => {
+            let (x, y) = (a.x.min(b.x), a.y.min(b.y));
+            Some(Rect {
+                x,
+                y,
+                w: a.right().max(b.right()) - x,
+                h: a.bottom().max(b.bottom()) - y,
+            })
+        }
+        (a, b) => a.or(b),
+    }
+}
+
+pub fn intersect(a: Rect, b: Rect) -> Option<Rect> {
+    let (x, y) = (a.x.max(b.x), a.y.max(b.y));
+    let (r, bottom) = (a.right().min(b.right()), a.bottom().min(b.bottom()));
+    (x < r && y < bottom).then_some(Rect {
+        x,
+        y,
+        w: r - x,
+        h: bottom - y,
+    })
+}
+
+/// The part of `r` on a `width` × `height` screen.
+pub fn clip(r: Rect, width: i32, height: i32) -> Option<Rect> {
+    intersect(
+        r,
+        Rect {
+            x: 0,
+            y: 0,
+            w: width,
+            h: height,
+        },
+    )
+}
+
+/// Draws the selection border, its grips and the size `label`, and returns
+/// where it drew. `scale` is the monitor's scale factor.
+pub fn draw_frame(buf: &mut [u32], width: i32, rect: Rect, label: &str, scale: f64) -> Rect {
     let height = buf.len() as i32 / width.max(1);
     let mut canvas = Canvas { buf, width, height };
     let px = |v: f64| ((v * scale).round() as i32).max(1);
@@ -101,7 +160,15 @@ pub fn draw_frame(buf: &mut [u32], width: i32, rect: Rect, label: &str, scale: f
     }
 
     // Size label above the selection, or inside it when there is no room.
-    draw_label(buf, width, rect, label, scale);
+    let label = draw_label(buf, width, rect, label, scale);
+    let out = half + t + 1;
+    let around = Rect {
+        x: rect.x - out,
+        y: rect.y - out,
+        w: rect.w + 2 * out,
+        h: rect.h + 2 * out,
+    };
+    union(Some(around), label).unwrap_or(around)
 }
 
 /// A clipped view of the pixel buffer.
@@ -125,9 +192,9 @@ impl Canvas<'_> {
     }
 }
 
-fn draw_label(buf: &mut [u32], width: i32, rect: Rect, label: &str, scale: f64) {
+fn draw_label(buf: &mut [u32], width: i32, rect: Rect, label: &str, scale: f64) -> Option<Rect> {
     if label.is_empty() {
-        return;
+        return None;
     }
     let s = scale as f32;
     let size = 12.5 * s;
@@ -141,18 +208,17 @@ fn draw_label(buf: &mut [u32], width: i32, rect: Rect, label: &str, scale: f64) 
     let x = rect.x.clamp(0, (width - w).max(0));
     let above = rect.y - gap - h;
     let y = if above >= 0 { above } else { rect.y + gap };
-    let Some(mut pixmap) = Pixmap::new(w as u32, h as u32) else {
-        return;
-    };
+    let mut pixmap = Pixmap::new(w as u32, h as u32)?;
     let bg = SkRect::from_xywh(0.0, 0.0, w as f32, h as f32);
     crate::paint::fill_round(&mut pixmap, bg, 5.0 * s, 0x111113, 0.85);
     font::draw(&mut pixmap, label, pad_x, pad_y, size, WHITE, 1.0);
-    blend_pixmap(buf, width, &pixmap, x, y);
+    blend_pixmap(buf, width, &pixmap, x, y)
 }
 
 /// Composites a premultiplied RGBA pixmap over a `0RGB` buffer `width` pixels wide,
 /// with the pixmap's top-left corner at (`x`, `y`). Parts off the buffer are clipped.
-pub fn blend_pixmap(buf: &mut [u32], width: i32, pixmap: &Pixmap, x: i32, y: i32) {
+/// Returns the part of the buffer it covered.
+pub fn blend_pixmap(buf: &mut [u32], width: i32, pixmap: &Pixmap, x: i32, y: i32) -> Option<Rect> {
     let height = buf.len() as i32 / width.max(1);
     let (pw, ph) = (pixmap.width() as i32, pixmap.height() as i32);
     let (x0, y0) = (x.max(0), y.max(0));
@@ -180,6 +246,12 @@ pub fn blend_pixmap(buf: &mut [u32], width: i32, pixmap: &Pixmap, x: i32, y: i32
             *dst = mix(data[i], 16) | mix(data[i + 1], 8) | mix(data[i + 2], 0);
         }
     }
+    (x0 < x1 && y0 < y1).then_some(Rect {
+        x: x0,
+        y: y0,
+        w: x1 - x0,
+        h: y1 - y0,
+    })
 }
 
 #[cfg(test)]
@@ -217,6 +289,34 @@ mod tests {
         assert_eq!(buf[45 * 100 + 30], 0xC86432);
         // The border sits just outside the selection.
         assert_eq!(buf[38 * 100 + 19], ACCENT);
+    }
+
+    #[test]
+    fn a_partial_redraw_matches_a_full_one() {
+        let image = RgbaImage::from_fn(100, 80, |x, y| Rgba([x as u8 * 2, y as u8 * 3, 90, 255]));
+        let frame = Frame::new(&image, 100, 80);
+        let first = Rect {
+            x: 10,
+            y: 30,
+            w: 30,
+            h: 20,
+        };
+        let second = Rect {
+            x: 50,
+            y: 40,
+            w: 35,
+            h: 25,
+        };
+        let mut partial = vec![0; 100 * 80];
+        draw(&mut partial, &frame, Some(first));
+        let last = draw_frame(&mut partial, 100, first, "30 × 20", 1.0);
+        let area = union(Some(last), Some(second)).unwrap();
+        restore(&mut partial, &frame, Some(second), area);
+        draw_frame(&mut partial, 100, second, "35 × 25", 1.0);
+        let mut full = vec![0; 100 * 80];
+        draw(&mut full, &frame, Some(second));
+        draw_frame(&mut full, 100, second, "35 × 25", 1.0);
+        assert!(partial == full);
     }
 
     #[test]
