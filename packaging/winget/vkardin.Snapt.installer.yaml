@@ -7,7 +7,7 @@ InstallModes:
   - interactive
   - silent
 UpgradeBehavior: install
-ReleaseDate: 2026-10-25
+ReleaseDate: 2026-10-26
 Installers:
   - Architecture: x64
     InstallerUrl: https://github.com/vkardin/snapt/releases/download/v2.0.0/snapt_2.0.0_x64-setup.exe

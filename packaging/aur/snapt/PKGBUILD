@@ -14,7 +14,7 @@ optdepends=('tesseract: text recognition'
             'tesseract-data-ukr: Ukrainian text recognition'
             'xdg-desktop-portal: screenshots and the shortcut on Wayland')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/vkardin/snapt/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('2a084188dc3ed26b95b93a4ed71da2088861fce126c4cb85536cbc6f0ce7233e')
+sha256sums=('6626ba4a869c164b7f17e2f7be8f1809b36bf82971fa41d2ac495eefd62bb224')
 
 prepare() {
   cd "$pkgname-$pkgver"
