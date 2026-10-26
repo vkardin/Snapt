@@ -26,6 +26,7 @@ mod record;
 mod scroll;
 mod settings;
 mod settings_window;
+mod sha256;
 #[cfg(test)]
 mod snapshot;
 mod tray;
