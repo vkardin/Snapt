@@ -124,7 +124,8 @@ Pick **Settings…** in the tray menu. There you can:
 - let Snapt replace the system screenshot tool: on Windows, PrtSc stops opening the Snipping
   Tool; on GNOME, the shortcut opens Snapt instead of GNOME Screenshot, on Wayland too; on
   macOS and other desktops, the window explains the one manual step;
-- choose the screenshots folder and format, save without a dialog, and start at login;
+- choose the screenshots folder and format, save without a dialog, also save what you copy,
+  open a file once it is saved, and start at login;
 - keep Snapt up to date: it checks GitHub Releases once a day and offers **Update** in the
   tray and in the window. The Windows installer, the macOS app and the AppImage update
   themselves; for the `.deb`, the download page opens.

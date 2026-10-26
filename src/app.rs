@@ -337,16 +337,28 @@ impl App {
     }
 
     fn copy(&mut self, shot: &image::RgbaImage) -> Result<()> {
-        self.output.copy(shot).map(|()| {
-            log::info!("copied {}×{} to the clipboard", shot.width(), shot.height());
-        })
+        self.output.copy(shot)?;
+        log::info!("copied {}×{} to the clipboard", shot.width(), shot.height());
+        if self.settings.save_on_copy {
+            // Straight into the folder: a dialog on every copy would defeat the point.
+            let path = self.output.save_to_folder(shot, &self.settings)?;
+            log::info!("saved {}", path.display());
+        }
+        Ok(())
     }
 
     /// Saves `shot`; returns whether the settings changed (the folder picked becomes the default).
     fn save(&mut self, shot: &image::RgbaImage) -> bool {
         let folder = self.settings.folder.clone();
         match self.output.save(shot, &mut self.settings) {
-            Ok(Some(path)) => log::info!("saved {}", path.display()),
+            Ok(Some(path)) => {
+                log::info!("saved {}", path.display());
+                if self.settings.open_after_save
+                    && let Err(err) = open::that_detached(&path)
+                {
+                    log::error!("failed to open {}: {err}", path.display());
+                }
+            }
             Ok(None) => {}
             Err(err) => log::error!("{err:#}"),
         }
@@ -626,6 +638,10 @@ impl App {
             Action::OpenFolder => self.open_folder(),
             Action::Format(format) => self.settings.format = format,
             Action::QuickSave => self.settings.quick_save = !self.settings.quick_save,
+            Action::SaveOnCopy => self.settings.save_on_copy = !self.settings.save_on_copy,
+            Action::OpenAfterSave => {
+                self.settings.open_after_save = !self.settings.open_after_save;
+            }
             Action::AutoUpdate => {
                 self.settings.auto_update = !self.settings.auto_update;
                 if self.settings.auto_update {

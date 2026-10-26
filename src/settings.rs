@@ -205,6 +205,10 @@ pub struct Settings {
     pub format: Format,
     /// Save straight into `folder` instead of asking where.
     pub quick_save: bool,
+    /// Copying a shot also saves it into `folder`.
+    pub save_on_copy: bool,
+    /// Open a saved shot in the system's image viewer or editor.
+    pub open_after_save: bool,
     pub autostart: bool,
     /// Take over the PrtSc key from the system's own screenshot tool.
     pub replace_system: bool,
@@ -241,6 +245,8 @@ impl Default for Settings {
             folder: default_folder(),
             format: Format::Png,
             quick_save: false,
+            save_on_copy: false,
+            open_after_save: false,
             autostart: false,
             replace_system: false,
             auto_update: true,
@@ -354,6 +360,8 @@ impl Settings {
                     }
                 }
                 "quick_save" => s.quick_save = value == "true",
+                "save_on_copy" => s.save_on_copy = value == "true",
+                "open_after_save" => s.open_after_save = value == "true",
                 "autostart" => s.autostart = value == "true",
                 "replace_system" => s.replace_system = value == "true",
                 "auto_update" => s.auto_update = value != "false",
@@ -396,6 +404,8 @@ impl Settings {
         let _ = writeln!(t, "folder = {}", self.folder.display());
         let _ = writeln!(t, "format = {}", self.format.extension());
         let _ = writeln!(t, "quick_save = {}", self.quick_save);
+        let _ = writeln!(t, "save_on_copy = {}", self.save_on_copy);
+        let _ = writeln!(t, "open_after_save = {}", self.open_after_save);
         let _ = writeln!(t, "autostart = {}", self.autostart);
         let _ = writeln!(t, "replace_system = {}", self.replace_system);
         let _ = writeln!(t, "auto_update = {}", self.auto_update);
@@ -555,6 +565,8 @@ mod tests {
             folder: PathBuf::from("/tmp/shots"),
             format: Format::Jpeg,
             quick_save: true,
+            save_on_copy: true,
+            open_after_save: true,
             autostart: true,
             replace_system: true,
             auto_update: false,
