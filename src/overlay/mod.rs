@@ -79,6 +79,8 @@ pub struct Style {
     pub stroke: f32,
     /// Font size in logical pixels.
     pub text_size: f32,
+    /// Rectangles and ellipses come out filled.
+    pub fill: bool,
 }
 
 impl Default for Style {
@@ -88,6 +90,7 @@ impl Default for Style {
             color: toolbar::PALETTE[0],
             stroke: 3.0,
             text_size: 20.0,
+            fill: false,
         }
     }
 }
@@ -438,6 +441,7 @@ impl Overlay {
                     );
                 }
                 let mut shape = Shape::start(tool, at, style.color, size);
+                shape.fill = style.fill;
                 if let Kind::Number(_, n) = &mut shape.kind {
                     *n = screen.canvas.next_number();
                 }
@@ -571,6 +575,7 @@ impl Overlay {
             KeyCode::KeyE => Some(Tool::Ellipse),
             KeyCode::KeyN => Some(Tool::Number),
             KeyCode::KeyB => Some(Tool::Pixelate),
+            KeyCode::KeyU => Some(Tool::Blur),
             KeyCode::KeyM => Some(Tool::Marker),
             KeyCode::KeyT => Some(Tool::Text),
             _ => None,
@@ -580,6 +585,11 @@ impl Overlay {
             KeyCode::Escape if self.picking => {
                 self.picking = false;
                 screen.update_cursor_icon(&style);
+                self.request_redraw_all();
+                None
+            }
+            KeyCode::KeyF if !command && has_selection => {
+                self.style.fill = !self.style.fill;
                 self.request_redraw_all();
                 None
             }
@@ -847,6 +857,7 @@ impl Screen {
             let look = Look {
                 tool: style.tool,
                 color: style.color,
+                fill: style.fill,
                 hover: self.hover,
                 picking,
             };

@@ -80,6 +80,7 @@ fn overlay(palette: bool) -> RgbaImage {
     let look = Look {
         tool: Some(Tool::Arrow),
         color: PALETTE[1],
+        fill: true,
         // A hovered button's tooltip says Ctrl or Cmd depending on the system.
         hover: None,
         picking: false,
