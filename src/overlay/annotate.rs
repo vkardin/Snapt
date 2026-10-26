@@ -25,11 +25,13 @@ pub enum Tool {
     Number,
     /// Hides what is under a rectangle behind big blocks of color.
     Pixelate,
+    /// Hides what is under a rectangle behind a blur.
+    Blur,
 }
 
 #[cfg(test)]
 impl Tool {
-    pub const ALL: [Tool; 9] = [
+    pub const ALL: [Tool; 10] = [
         Tool::Pen,
         Tool::Line,
         Tool::Arrow,
@@ -39,6 +41,7 @@ impl Tool {
         Tool::Text,
         Tool::Number,
         Tool::Pixelate,
+        Tool::Blur,
     ];
 }
 
@@ -54,6 +57,7 @@ pub enum Kind {
     /// A filled circle around the center with a number in it.
     Number(Point, u32),
     Pixelate(Point, Point),
+    Blur(Point, Point),
 }
 
 /// The unannotated screenshot under a pixmap: pixmap pixel (`px`, `py`) is
@@ -71,6 +75,8 @@ pub struct Shape {
     pub kind: Kind,
     pub color: u32,
     pub size: f32,
+    /// Rectangles and ellipses are filled with `color` instead of outlined.
+    pub fill: bool,
 }
 
 /// The marker is a wide, see-through stroke.
@@ -90,8 +96,14 @@ impl Shape {
             Tool::Text => Kind::Text(p, String::new()),
             Tool::Number => Kind::Number(p, 1),
             Tool::Pixelate => Kind::Pixelate(p, p),
+            Tool::Blur => Kind::Blur(p, p),
         };
-        Self { kind, color, size }
+        Self {
+            kind,
+            color,
+            size,
+            fill: false,
+        }
     }
 
     /// Extends the shape to `p` while the mouse is dragged.
@@ -107,7 +119,7 @@ impl Shape {
             Kind::Line(a, b) | Kind::Arrow(a, b) => {
                 *b = if straight { snap_angle(*a, p) } else { p }
             }
-            Kind::Rect(a, b) | Kind::Ellipse(a, b) | Kind::Pixelate(a, b) => {
+            Kind::Rect(a, b) | Kind::Ellipse(a, b) | Kind::Pixelate(a, b) | Kind::Blur(a, b) => {
                 *b = if straight { square(*a, p) } else { p }
             }
             Kind::Text(..) | Kind::Number(..) => {}
@@ -122,7 +134,8 @@ impl Shape {
             | Kind::Arrow(a, b)
             | Kind::Rect(a, b)
             | Kind::Ellipse(a, b)
-            | Kind::Pixelate(a, b) => a.distance(*b) >= 2.0,
+            | Kind::Pixelate(a, b)
+            | Kind::Blur(a, b) => a.distance(*b) >= 2.0,
             Kind::Text(_, text) => !text.trim().is_empty(),
             Kind::Number(..) => true,
         }
@@ -150,7 +163,8 @@ impl Shape {
             | Kind::Arrow(a, b)
             | Kind::Rect(a, b)
             | Kind::Ellipse(a, b)
-            | Kind::Pixelate(a, b) => {
+            | Kind::Pixelate(a, b)
+            | Kind::Blur(a, b) => {
                 shift(a);
                 shift(b);
             }
@@ -166,7 +180,8 @@ impl Shape {
             | Kind::Arrow(a, b)
             | Kind::Rect(a, b)
             | Kind::Ellipse(a, b)
-            | Kind::Pixelate(a, b) => vec![*a, *b],
+            | Kind::Pixelate(a, b)
+            | Kind::Blur(a, b) => vec![*a, *b],
             Kind::Number(c, _) => {
                 let r = self.number_radius();
                 vec![
@@ -186,7 +201,7 @@ impl Shape {
         };
         let margin = match self.kind {
             Kind::Arrow(..) => self.size * 4.0 + 4.0,
-            Kind::Text(..) | Kind::Number(..) | Kind::Pixelate(..) => 2.0,
+            Kind::Text(..) | Kind::Number(..) | Kind::Pixelate(..) | Kind::Blur(..) => 2.0,
             _ => self.stroke_width() / 2.0 + 2.0,
         };
         let (mut l, mut t, mut r, mut b) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
@@ -244,14 +259,14 @@ impl Shape {
                     SkRect::from_ltrb(a.x.min(b.x), a.y.min(b.y), a.x.max(b.x), a.y.max(b.y));
                 if let Some(rect) = rect {
                     let path = PathBuilder::from_rect(rect);
-                    pixmap.stroke_path(&path, &paint, &stroke, transform, None);
+                    self.paint_path(pixmap, &path, &paint, &stroke, transform);
                 }
             }
             Kind::Ellipse(a, b) => {
                 let rect =
                     SkRect::from_ltrb(a.x.min(b.x), a.y.min(b.y), a.x.max(b.x), a.y.max(b.y));
                 if let Some(path) = rect.and_then(PathBuilder::from_oval) {
-                    pixmap.stroke_path(&path, &paint, &stroke, transform, None);
+                    self.paint_path(pixmap, &path, &paint, &stroke, transform);
                 }
             }
             Kind::Number(c, n) => {
@@ -284,6 +299,13 @@ impl Shape {
                 let block = ((self.size * 3.0).max(8.0) * transform.sx).round().max(2.0) as i32;
                 pixelate(pixmap, a, b, block, backdrop);
             }
+            Kind::Blur(a, b) => {
+                let (mut a, mut b) = (*a, *b);
+                transform.map_point(&mut a);
+                transform.map_point(&mut b);
+                let radius = ((self.size * 2.0).max(6.0) * transform.sx).round().max(1.0) as i32;
+                blur(pixmap, a, b, radius, backdrop);
+            }
             Kind::Text(at, text) => {
                 let mut at = *at;
                 transform.map_point(&mut at);
@@ -296,6 +318,103 @@ impl Shape {
                     self.color,
                     1.0,
                 );
+            }
+        }
+    }
+}
+
+impl Shape {
+    /// Fills `path` or strokes its outline, as `fill` says. The stroke still
+    /// goes around a filled shape, so it keeps its size.
+    fn paint_path(
+        &self,
+        pixmap: &mut Pixmap,
+        path: &tiny_skia::Path,
+        paint: &Paint,
+        stroke: &Stroke,
+        transform: Transform,
+    ) {
+        if self.fill {
+            pixmap.fill_path(path, paint, FillRule::Winding, transform, None);
+        }
+        pixmap.stroke_path(path, paint, stroke, transform, None);
+    }
+}
+
+/// Blurs the backdrop under the device-pixel rectangle `a`–`b` into `pixmap`:
+/// three box blurs of `radius` in a row, which look close to a Gaussian one.
+fn blur(pixmap: &mut Pixmap, a: Point, b: Point, radius: i32, backdrop: Option<&Backdrop>) {
+    let (pw, ph) = (pixmap.width() as i32, pixmap.height() as i32);
+    let left = (a.x.min(b.x).round() as i32).clamp(0, pw);
+    let top = (a.y.min(b.y).round() as i32).clamp(0, ph);
+    let right = (a.x.max(b.x).round() as i32).clamp(0, pw);
+    let bottom = (a.y.max(b.y).round() as i32).clamp(0, ph);
+    let Some(backdrop) = backdrop else {
+        let rect = SkRect::from_ltrb(left as f32, top as f32, right as f32, bottom as f32);
+        crate::paint::fill_round(pixmap, rect, 0.0, 0x808080, 0.6);
+        return;
+    };
+    let (w, h) = ((right - left) as usize, (bottom - top) as usize);
+    if w == 0 || h == 0 {
+        return;
+    }
+    let (iw, ih) = (
+        backdrop.image.width() as i32,
+        backdrop.image.height() as i32,
+    );
+    let mut px: Vec<[u32; 3]> = Vec::with_capacity(w * h);
+    for y in top..bottom {
+        for x in left..right {
+            let ix = (((x + backdrop.x) as f32 * backdrop.scale) as i32).clamp(0, iw - 1);
+            let iy = (((y + backdrop.y) as f32 * backdrop.scale) as i32).clamp(0, ih - 1);
+            let p = backdrop.image.get_pixel(ix as u32, iy as u32).0;
+            px.push([p[0] as u32, p[1] as u32, p[2] as u32]);
+        }
+    }
+    let mut tmp = px.clone();
+    for _ in 0..3 {
+        box_blur(&px, &mut tmp, w, h, radius as usize, 1, w);
+        box_blur(&tmp, &mut px, h, w, radius as usize, w, 1);
+    }
+    let data = pixmap.data_mut();
+    for (j, row) in px.chunks_exact(w).enumerate() {
+        for (i, c) in row.iter().enumerate() {
+            let at = (((top as usize + j) * pw as usize) + left as usize + i) * 4;
+            data[at..at + 4].copy_from_slice(&[c[0] as u8, c[1] as u8, c[2] as u8, 255]);
+        }
+    }
+}
+
+/// One box-blur pass of `radius` along `len`-long lines, `lines` of them. A
+/// line's pixels are `step` apart, and the lines start `stride` apart; the
+/// edge pixels repeat past the ends.
+fn box_blur(
+    src: &[[u32; 3]],
+    dst: &mut [[u32; 3]],
+    len: usize,
+    lines: usize,
+    radius: usize,
+    step: usize,
+    stride: usize,
+) {
+    let window = (2 * radius + 1) as u32;
+    let at = |line: usize, i: isize| line * stride + (i.clamp(0, len as isize - 1) as usize) * step;
+    for line in 0..lines {
+        let mut sum = [0u32; 3];
+        for i in -(radius as isize)..=radius as isize {
+            let p = src[at(line, i)];
+            for c in 0..3 {
+                sum[c] += p[c];
+            }
+        }
+        for i in 0..len as isize {
+            dst[at(line, i)] = sum.map(|s| s / window);
+            let (add, drop) = (
+                src[at(line, i + radius as isize + 1)],
+                src[at(line, i - radius as isize)],
+            );
+            for c in 0..3 {
+                sum[c] = sum[c] + add[c] - drop[c];
             }
         }
     }
@@ -631,6 +750,34 @@ mod tests {
         // Blocks of 10: the top row stays white, the bottom black, each block flat.
         assert_eq!(image.get_pixel(3, 3).0, [255, 255, 255, 255]);
         assert_eq!(image.get_pixel(15, 15).0, [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn blur_softens_an_edge_and_keeps_flat_areas() {
+        let mut image = RgbaImage::from_pixel(40, 40, Rgba([0, 0, 0, 255]));
+        for x in 0..40 {
+            for y in 0..20 {
+                image.put_pixel(x, y, Rgba([255, 255, 255, 255]));
+            }
+        }
+        let mut shape = Shape::start(Tool::Blur, pt(0.0, 0.0), 0, 1.0);
+        shape.drag_to(pt(40.0, 40.0), false);
+        flatten(&mut image, &[shape], 0.0, 0.0, 1.0);
+        // Far from the edge nothing changes; next to it, gray.
+        assert_eq!(image.get_pixel(20, 1).0, [255, 255, 255, 255]);
+        assert_eq!(image.get_pixel(20, 38).0, [0, 0, 0, 255]);
+        let near = image.get_pixel(20, 19).0[0];
+        assert!(near > 60 && near < 250, "{near}");
+    }
+
+    #[test]
+    fn filled_rectangles_cover_their_inside() {
+        let mut image = RgbaImage::from_pixel(30, 30, Rgba([0, 0, 0, 255]));
+        let mut shape = Shape::start(Tool::Rect, pt(5.0, 5.0), 0xFF0000, 2.0);
+        shape.drag_to(pt(25.0, 25.0), false);
+        shape.fill = true;
+        flatten(&mut image, &[shape], 0.0, 0.0, 1.0);
+        assert_eq!(image.get_pixel(15, 15).0, [255, 0, 0, 255]);
     }
 
     #[test]

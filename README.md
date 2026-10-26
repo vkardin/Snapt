@@ -30,8 +30,8 @@ No accounts, no cloud, a few megabytes on disk.
 - Select an area on any monitor, or a whole window with one click, HiDPI aware, with
   handles to move and resize it and a magnifier for pixel-exact edges.
 - Draw on it: pen, line, arrow, rectangle, ellipse, marker, text and numbered steps, in
-  any color, or one picked from the screen with the eyedropper. Pixelate what should stay
-  private. Click a shape to move it, or delete it with `Delete`.
+  any color, or one picked from the screen with the eyedropper. Pixelate or blur what should
+  stay private, and fill rectangles and ellipses with color. Click a shape to move it, or delete it with `Delete`.
 - A color picker on its own shortcut (`Ctrl+Alt+C`) or in the tray: a magnifier shows the
   pixels under the cursor and a click copies the color as HEX or RGB.
 - Copy the text in the selection, recognized by the system's own OCR (English, Russian,
@@ -70,7 +70,8 @@ The screen freezes, then:
 | Select a window | Point at it and click |
 | Move or resize it | Drag inside the selection or by its handles |
 | Select the whole screen | `Ctrl+A` |
-| Pick a drawing tool | Click it in the panel, or press `P` pen, `L` line, `A` arrow, `R` rectangle, `E` ellipse, `M` marker, `T` text, `N` numbered step, `B` pixelate |
+| Pick a drawing tool | Click it in the panel, or press `P` pen, `L` line, `A` arrow, `R` rectangle, `E` ellipse, `M` marker, `T` text, `N` numbered step, `B` pixelate, `U` blur |
+| Filled rectangles and ellipses | `F` switches filling on and off |
 | Move or delete a shape | With no tool picked, drag it, or click it and press `Delete` |
 | Straight lines, squares | Hold `Shift` while drawing |
 | Line width, text size | Mouse wheel |

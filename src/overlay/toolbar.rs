@@ -30,7 +30,7 @@ pub enum Button {
     Eyedropper,
 }
 
-const TOOLS: [Button; 12] = [
+const TOOLS: [Button; 13] = [
     Button::Tool(Tool::Pen),
     Button::Tool(Tool::Line),
     Button::Tool(Tool::Arrow),
@@ -40,6 +40,7 @@ const TOOLS: [Button; 12] = [
     Button::Tool(Tool::Text),
     Button::Tool(Tool::Number),
     Button::Tool(Tool::Pixelate),
+    Button::Tool(Tool::Blur),
     Button::Color,
     Button::Undo,
     Button::Close,
@@ -90,6 +91,7 @@ impl Button {
             Button::Tool(Tool::Arrow) => (T::Arrow, "A".into()),
             Button::Tool(Tool::Rect) => (T::Rectangle, "R".into()),
             Button::Tool(Tool::Ellipse) => (T::Ellipse, "E".into()),
+            Button::Tool(Tool::Blur) => (T::Blur, "U".into()),
             Button::Tool(Tool::Number) => (T::Number, "N".into()),
             Button::Tool(Tool::Pixelate) => (T::Pixelate, "B".into()),
             Button::Tool(Tool::Marker) => (T::Marker, "M".into()),
@@ -135,6 +137,8 @@ pub struct Toolbar {
 pub struct Look {
     pub tool: Option<Tool>,
     pub color: u32,
+    /// Rectangles and ellipses are drawn filled.
+    pub fill: bool,
     pub hover: Option<Target>,
     /// The eyedropper is waiting for a click.
     pub picking: bool,
@@ -338,7 +342,7 @@ impl Toolbar {
                             at.x() + (at.width() - size) / 2.0,
                             at.y() + (at.height() - size) / 2.0,
                         );
-                        icon(&mut pixmap, b, look.color, transform);
+                        icon(&mut pixmap, b, look, transform);
                         // The current color as text, to read or retype elsewhere.
                         let hex = hex(look.color);
                         let size = 12.0 * s;
@@ -377,7 +381,7 @@ impl Toolbar {
                         at.x() + (at.width() - size) / 2.0,
                         at.y() + (at.height() - size) / 2.0,
                     );
-                    icon(&mut pixmap, b, look.color, transform);
+                    icon(&mut pixmap, b, look, transform);
                 }
             }
             let at = render::blend_pixmap(buf, width, &pixmap, panel.x, panel.y);
@@ -446,7 +450,8 @@ fn inset(r: Option<SkRect>, by: f32) -> Option<SkRect> {
 }
 
 /// Draws a button's icon on a 16 × 16 grid mapped through `transform`.
-fn icon(pixmap: &mut Pixmap, button: Button, color: u32, transform: Transform) {
+fn icon(pixmap: &mut Pixmap, button: Button, look: &Look, transform: Transform) {
+    let color = look.color;
     let mut paint = Paint::default();
     paint.set_color_rgba8(0xF4, 0xF4, 0xF6, 255);
     paint.anti_alias = true;
@@ -481,6 +486,20 @@ fn icon(pixmap: &mut Pixmap, button: Button, color: u32, transform: Transform) {
         }
         Button::Tool(Tool::Rect) => p.push_rect(SkRect::from_xywh(2.5, 3.5, 11.0, 9.0).unwrap()),
         Button::Tool(Tool::Ellipse) => p.push_oval(SkRect::from_xywh(2.0, 3.5, 12.0, 9.0).unwrap()),
+        Button::Tool(Tool::Blur) => {
+            // A drop with soft rings around it.
+            p.move_to(8.0, 2.5);
+            p.cubic_to(8.0, 2.5, 4.0, 7.0, 4.0, 9.5);
+            p.cubic_to(4.0, 11.7, 5.8, 13.5, 8.0, 13.5);
+            p.cubic_to(10.2, 13.5, 12.0, 11.7, 12.0, 9.5);
+            p.cubic_to(12.0, 7.0, 8.0, 2.5, 8.0, 2.5);
+            p.close();
+            let mut faint = paint.clone();
+            faint.set_color_rgba8(0xF4, 0xF4, 0xF6, 90);
+            if let Some(dots) = PathBuilder::from_circle(8.0, 9.5, 1.6) {
+                pixmap.fill_path(&dots, &faint, FillRule::Winding, transform, None);
+            }
+        }
         Button::Tool(Tool::Number) => {
             // A "1" in a circle.
             p.push_circle(8.0, 8.0, 6.0);
@@ -642,6 +661,10 @@ fn icon(pixmap: &mut Pixmap, button: Button, color: u32, transform: Transform) {
         }
     }
     if let Some(path) = p.finish() {
+        let filled = matches!(button, Button::Tool(Tool::Rect | Tool::Ellipse)) && look.fill;
+        if filled {
+            pixmap.fill_path(&path, &paint, FillRule::Winding, transform, None);
+        }
         pixmap.stroke_path(&path, &paint, &stroke, transform, None);
     }
 }
@@ -752,6 +775,7 @@ mod tests {
         let look = Look {
             tool: Some(Tool::Arrow),
             color: PALETTE[0],
+            fill: false,
             hover: Some(Target::Button(Button::Save)),
             picking: false,
         };
