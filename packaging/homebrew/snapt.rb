@@ -1,9 +1,9 @@
 cask "snapt" do
   arch arm: "aarch64", intel: "x64"
 
-  version "2.1.0"
-  sha256 arm:   "59f71d33fa31df873bea29532435271e1a3c9cefa5c2cb3f5b3b040c10bfc3d5",
-         intel: "953c16fd92cfa957c2f4d4d6a0141b8c36a07712da8d7ec2f5e0b49283aaa2af"
+  version "2.2.0"
+  sha256 arm:   "4d905e17feb3b48dc5fe42211de92c0c2bce62986f8b58ff7f23d82a6986c1b7",
+         intel: "d176498d63dd90f34d1cffca8f24fc4ccdafefc455a70e18c0a6c8e06e2362db"
 
   url "https://github.com/vkardin/snapt/releases/download/v#{version}/Snapt_#{version}_#{arch}.dmg"
   name "Snapt"
