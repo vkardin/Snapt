@@ -11,6 +11,10 @@ readme = "README.md"
 keywords = ["screenshot", "screen-capture", "annotation", "lightshot"]
 categories = ["multimedia::images", "gui"]
 
+[workspace]
+# The Windows installer; see installer/Cargo.toml.
+members = ["installer"]
+
 [dependencies]
 anyhow = "1"
 arboard = { version = "3.7", default-features = false, features = ["image-data"] }
@@ -55,7 +59,7 @@ opt-level = "s"
 panic = "abort"
 strip = true
 
-# Installers are built with cargo-packager: `cargo build --release && cargo packager --release`.
+# Installers are built with cargo-packager, except the Windows -setup.exe (see installer/): `cargo build --release && cargo packager --release`.
 # See .github/workflows/release.yml for the formats built on each platform.
 # Gives snapt.exe its icon in Explorer and the taskbar.
 [target.'cfg(windows)'.build-dependencies]
@@ -83,15 +87,6 @@ icons = [
 minimum-system-version = "11.0"
 # Ad-hoc signature: no Apple Developer ID yet, but Apple Silicon refuses fully unsigned apps.
 signing-identity = "-"
-
-[package.metadata.packager.nsis]
-# Install per user, so the installer needs no administrator rights.
-installer-mode = "currentUser"
-installer-icon = "assets/icons/icon.ico"
-header-image = "assets/installer/header.bmp"
-sidebar-image = "assets/installer/sidebar.bmp"
-languages = ["English", "Russian", "Ukrainian"]
-display-language-selector = false
 
 [package.metadata.packager.deb]
 depends = ["libxcb1", "libxkbcommon-x11-0", "libxcb-randr0", "libxcb-shm0", "libdbus-1-3", "libpipewire-0.3-0", "libwayland-client0", "libegl1", "libgbm1"]

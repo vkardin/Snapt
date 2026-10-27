@@ -193,9 +193,9 @@ pub fn install(path: &Path) -> Result<()> {
 
 #[cfg(target_os = "windows")]
 fn platform_install(path: &Path) -> Result<()> {
-    // The NSIS installer closes nothing by itself, which is why Snapt exits first.
-    // It installs per user, so no administrator prompt appears.
+    // --update installs without questions and starts the new Snapt when done.
     Command::new(path)
+        .arg("--update")
         .spawn()
         .context("failed to start the installer")?;
     Ok(())

@@ -3458,6 +3458,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "snapt-setup"
+version = "0.0.0"
+dependencies = [
+ "ab_glyph",
+ "miniz_oxide 0.8.9",
+ "softbuffer",
+ "sys-locale",
+ "tiny-skia 0.12.0",
+ "windows",
+ "winit",
+ "winresource",
+]
+
+[[package]]
 name = "softbuffer"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3692,6 +3706,7 @@ dependencies = [
  "bytemuck",
  "cfg-if",
  "log",
+ "png",
  "tiny-skia-path 0.12.0",
 ]
 
