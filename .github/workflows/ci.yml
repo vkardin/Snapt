@@ -45,8 +45,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev \
             libdbus-1-dev libpipewire-0.3-dev libwayland-dev libegl-dev libgbm-dev clang
-      - run: cargo clippy --all-targets --locked -- -D warnings
-      - run: cargo test --locked
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
       - name: Test against a fake desktop portal
         if: runner.os == 'Linux'
         run: |

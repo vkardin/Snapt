@@ -16,7 +16,7 @@ on:
       - .github/workflows/release.yml
       - .github/release-notes.md
       - assets/icons/**
-      - assets/installer/**
+      - installer/**
       - build.rs
       - Cargo.toml
 
@@ -38,7 +38,7 @@ jobs:
           - name: Windows
             os: windows-latest
             target: x86_64-pc-windows-msvc
-            formats: nsis,wix
+            formats: wix
           - name: macOS Apple Silicon
             os: macos-latest
             target: aarch64-apple-darwin
@@ -69,6 +69,14 @@ jobs:
         run: cargo build --release --locked --target ${{ matrix.target }}
       - name: Package
         run: cargo packager --release --target ${{ matrix.target }} --formats ${{ matrix.formats }}
+      - name: Build the Windows installer
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          SNAPT_EXE="$PWD/target/${{ matrix.target }}/release/snapt.exe" \
+            cargo build --release --locked -p snapt-setup --target ${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/snapt-setup.exe "target/packages/snapt_${version}_x64-setup.exe"
       - name: Collect installers
         shell: bash
         run: |
