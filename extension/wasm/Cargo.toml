@@ -1,0 +1,25 @@
+[package]
+name = "snapt-wasm"
+version = "0.1.0"
+edition = "2024"
+# The desktop app's, so lints judge its shared modules the same way.
+rust-version = "1.85"
+license = "MIT"
+description = "Snapt's annotation code, compiled to WebAssembly for the browser extension."
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+ab_glyph = "0.2"
+image = { version = "0.25", default-features = false }
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "s"
+panic = "abort"
+strip = true

@@ -3,7 +3,7 @@
   "name": "__MSG_name__",
   "short_name": "Snapt",
   "description": "__MSG_description__",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "default_locale": "en",
   "homepage_url": "https://vkardin.github.io/snapt/",
   "icons": {
@@ -12,15 +12,60 @@
     "48": "icons/48.png",
     "128": "icons/128.png"
   },
+  "action": {
+    "default_title": "Snapt",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png"
+    }
+  },
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": ["contextMenus", "downloads", "offscreen"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "contextMenus",
+    "downloads",
+    "offscreen",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "commands": {
+    "area": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "__MSG_captureArea__"
+    },
+    "visible": {
+      "suggested_key": {
+        "default": "Alt+Shift+V"
+      },
+      "description": "__MSG_captureVisible__"
+    },
+    "page": {
+      "suggested_key": {
+        "default": "Alt+Shift+P"
+      },
+      "description": "__MSG_capturePage__"
+    },
+    "screen": {
+      "description": "__MSG_captureScreen__"
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
       "all_frames": true,
       "run_at": "document_idle"
     }

@@ -48,6 +48,14 @@ No accounts, no cloud, a few megabytes on disk.
 
 Planned: Flatpak and code-signed installers.
 
+## Browser extension
+
+Snapt also comes as an extension for Chrome and Firefox: select an area, the
+visible part or the whole scrolling page, annotate it with the same tools, and
+copy or save it. It adds "Save image as PNG / JPG" to every image and an
+Alt+click viewer that zooms down to the pixel grid. See
+[extension/README.md](extension/README.md).
+
 ## Install
 
 Download the installer for your system from the

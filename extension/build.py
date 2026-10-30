@@ -10,12 +10,16 @@ Chrome Web Store and addons.mozilla.org.
 
 import json
 import shutil
+import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "src"
 DIST = ROOT / "dist"
+WASM = ROOT / "wasm"
+WASM_OUT = WASM / "target" / "wasm32-unknown-unknown" / "release" / "snapt_wasm.wasm"
 
 # Files only Chrome uses: Firefox's event page has a DOM of its own.
 CHROME_ONLY = {"offscreen.html", "offscreen.js"}
@@ -40,10 +44,26 @@ def firefox(manifest):
     return manifest
 
 
+def build_wasm():
+    """Compiles the editor core: Snapt's own annotation code, for the browser."""
+    try:
+        subprocess.run(
+            ["cargo", "build", "--release", "--locked", "--target", "wasm32-unknown-unknown"],
+            cwd=WASM,
+            check=True,
+        )
+    except FileNotFoundError:
+        sys.exit("cargo not found: install Rust from https://rustup.rs")
+    except subprocess.CalledProcessError:
+        sys.exit("the wasm build failed; is the target installed? "
+                 "rustup target add wasm32-unknown-unknown")
+
+
 def build(name, adapt, skip):
     out = DIST / name
     shutil.rmtree(out, ignore_errors=True)
     shutil.copytree(SRC, out, ignore=lambda _dir, names: [n for n in names if n in skip])
+    shutil.copy(WASM_OUT, out / "snapt.wasm")
     manifest = adapt(json.loads((SRC / "manifest.json").read_text(encoding="utf-8")))
     (out / "manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
@@ -58,6 +78,7 @@ def build(name, adapt, skip):
 
 
 def main():
+    build_wasm()
     DIST.mkdir(exist_ok=True)
     build("chrome", chrome, set())
     build("firefox", firefox, CHROME_ONLY)

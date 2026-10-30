@@ -3,7 +3,7 @@
     "message": "Snapt: screenshots and image tools"
   },
   "description": {
-    "message": "Save any image as PNG or JPG, and Alt+click an image to zoom in to its pixels."
+    "message": "Screenshots of an area or a whole page with arrows, text and blur. Save images as PNG or JPG, Alt+click to zoom into pixels."
   },
   "savePng": {
     "message": "Save image as PNG"
@@ -39,5 +39,108 @@
   },
   "zoomOut": {
     "message": "Zoom out (−)"
+  },
+  "captureArea": {
+    "message": "Select an area"
+  },
+  "captureVisible": {
+    "message": "Visible part of the page"
+  },
+  "capturePage": {
+    "message": "Whole page"
+  },
+  "selectHint": {
+    "message": "Drag to select an area, or click an element. Enter takes the whole view, Esc cancels."
+  },
+  "captureFailed": {
+    "message": "Snapt could not take the screenshot: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
+  },
+  "captureGone": {
+    "message": "This screenshot is no longer available. Take a new one from the Snapt button."
+  },
+  "loading": {
+    "message": "Loading…"
+  },
+  "copy": {
+    "message": "Copy"
+  },
+  "copied": {
+    "message": "Copied to the clipboard"
+  },
+  "copyFailed": {
+    "message": "Could not copy: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
+  },
+  "copyTip": {
+    "message": "Copy to the clipboard (Ctrl+C)"
+  },
+  "savePngTip": {
+    "message": "Save as PNG (Ctrl+S)"
+  },
+  "saveJpgTip": {
+    "message": "Save as JPG (Ctrl+Shift+S)"
+  },
+  "undo": {
+    "message": "Undo (Ctrl+Z)"
+  },
+  "redo": {
+    "message": "Redo (Ctrl+Shift+Z)"
+  },
+  "fill": {
+    "message": "Fill rectangles and ellipses (F)"
+  },
+  "customColor": {
+    "message": "Any color"
+  },
+  "toolPen": {
+    "message": "Pen"
+  },
+  "toolLine": {
+    "message": "Line"
+  },
+  "toolArrow": {
+    "message": "Arrow"
+  },
+  "toolRect": {
+    "message": "Rectangle"
+  },
+  "toolEllipse": {
+    "message": "Ellipse"
+  },
+  "toolMarker": {
+    "message": "Marker"
+  },
+  "toolText": {
+    "message": "Text"
+  },
+  "toolNumber": {
+    "message": "Numbered steps"
+  },
+  "toolPixelate": {
+    "message": "Pixelate"
+  },
+  "toolBlur": {
+    "message": "Blur"
+  },
+  "captureScreen": {
+    "message": "Screen or window"
+  },
+  "screenHint": {
+    "message": "Pick a screen or a window in the browser's sharing dialog. Snapt takes one frame and stops sharing right away; nothing leaves your computer."
+  },
+  "screenButton": {
+    "message": "Choose a screen or window"
+  },
+  "screenCancelled": {
+    "message": "Nothing was picked. Try again when you are ready."
   }
 }

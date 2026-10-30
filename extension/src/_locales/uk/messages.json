@@ -3,7 +3,7 @@
     "message": "Snapt: скриншоти та робота із зображеннями"
   },
   "description": {
-    "message": "Зберігайте будь-яке зображення як PNG або JPG, а Alt+клік по зображенню збільшить його до пікселів."
+    "message": "Скриншоти області або всієї сторінки зі стрілками, текстом і розмиттям. Зображення в PNG або JPG, Alt+клік для зуму."
   },
   "savePng": {
     "message": "Зберегти зображення як PNG"
@@ -39,5 +39,108 @@
   },
   "zoomOut": {
     "message": "Зменшити (−)"
+  },
+  "captureArea": {
+    "message": "Виділити область"
+  },
+  "captureVisible": {
+    "message": "Видима частина сторінки"
+  },
+  "capturePage": {
+    "message": "Уся сторінка"
+  },
+  "selectHint": {
+    "message": "Виділіть область мишею або клацніть по елементу. Enter — усе видиме, Esc — скасувати."
+  },
+  "captureFailed": {
+    "message": "Snapt не зміг зробити скриншот: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
+  },
+  "captureGone": {
+    "message": "Цей скриншот більше недоступний. Зробіть новий кнопкою Snapt."
+  },
+  "loading": {
+    "message": "Завантаження…"
+  },
+  "copy": {
+    "message": "Копіювати"
+  },
+  "copied": {
+    "message": "Скопійовано в буфер обміну"
+  },
+  "copyFailed": {
+    "message": "Не вдалося скопіювати: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
+  },
+  "copyTip": {
+    "message": "Копіювати в буфер обміну (Ctrl+C)"
+  },
+  "savePngTip": {
+    "message": "Зберегти як PNG (Ctrl+S)"
+  },
+  "saveJpgTip": {
+    "message": "Зберегти як JPG (Ctrl+Shift+S)"
+  },
+  "undo": {
+    "message": "Скасувати (Ctrl+Z)"
+  },
+  "redo": {
+    "message": "Повторити (Ctrl+Shift+Z)"
+  },
+  "fill": {
+    "message": "Заливка прямокутників і еліпсів (F)"
+  },
+  "customColor": {
+    "message": "Будь-який колір"
+  },
+  "toolPen": {
+    "message": "Олівець"
+  },
+  "toolLine": {
+    "message": "Лінія"
+  },
+  "toolArrow": {
+    "message": "Стрілка"
+  },
+  "toolRect": {
+    "message": "Прямокутник"
+  },
+  "toolEllipse": {
+    "message": "Еліпс"
+  },
+  "toolMarker": {
+    "message": "Маркер"
+  },
+  "toolText": {
+    "message": "Текст"
+  },
+  "toolNumber": {
+    "message": "Нумерація"
+  },
+  "toolPixelate": {
+    "message": "Пікселізація"
+  },
+  "toolBlur": {
+    "message": "Розмиття"
+  },
+  "captureScreen": {
+    "message": "Екран або вікно"
+  },
+  "screenHint": {
+    "message": "Виберіть екран або вікно в діалозі браузера. Snapt візьме один кадр і одразу припинить показ; нічого не залишає ваш комп'ютер."
+  },
+  "screenButton": {
+    "message": "Вибрати екран або вікно"
+  },
+  "screenCancelled": {
+    "message": "Нічого не вибрано. Спробуйте ще раз, коли будете готові."
   }
 }

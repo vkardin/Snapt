@@ -4,3 +4,4 @@
 .idea/
 .vscode/
 /extension/dist
+/extension/wasm/target
