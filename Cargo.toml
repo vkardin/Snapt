@@ -14,6 +14,8 @@ categories = ["multimedia::images", "gui"]
 [workspace]
 # The Windows installer; see installer/Cargo.toml.
 members = ["installer"]
+# The browser extension's editor core, built for wasm32; see extension/wasm.
+exclude = ["extension/wasm"]
 
 [dependencies]
 anyhow = "1"

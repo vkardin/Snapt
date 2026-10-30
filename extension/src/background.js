@@ -124,3 +124,112 @@ function baseName(src) {
     .slice(0, 100);
   return name || 'image';
 }
+
+// ---- Screenshots ------------------------------------------------------------
+
+// Captures waiting for their editor tab to pick them up, by id.
+const captures = new Map();
+
+chrome.runtime.onMessage.addListener((message, sender, reply) => {
+  if (message.type === 'capture') {
+    chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([tab]) => capture(message.mode, tab));
+    return false;
+  }
+  if (message.type === 'take') {
+    reply(captures.get(message.id) ?? null);
+    captures.delete(message.id);
+    return false;
+  }
+  return false;
+});
+
+chrome.commands.onCommand.addListener((command, tab) => {
+  if (['visible', 'area', 'page'].includes(command)) capture(command, tab);
+});
+
+async function capture(mode, tab) {
+  if (!tab) return;
+  try {
+    const shot = mode === 'page' ? await capturePage(tab) : await captureVisible(tab, mode === 'area');
+    if (shot) await openEditor(shot, tab);
+  } catch (err) {
+    console.error(err);
+    const text = chrome.i18n.getMessage('captureFailed', [err.message || String(err)]);
+    chrome.tabs.sendMessage(tab.id, { type: 'toast', text }, { frameId: 0 }).catch(() => {});
+  } finally {
+    chrome.action.setBadgeText({ tabId: tab.id, text: '' }).catch(() => {});
+  }
+}
+
+async function openEditor(shot, tab) {
+  const id = crypto.randomUUID();
+  captures.set(id, { ...shot, title: tab.title || '', url: tab.url || '' });
+  await chrome.tabs.create({
+    url: chrome.runtime.getURL(`editor.html#${id}`),
+    index: tab.index + 1,
+    openerTabId: tab.id,
+  });
+}
+
+// Talks to the content script in the tab's top frame, loading it first into
+// pages that were open before the extension was installed.
+async function tell(tab, message) {
+  try {
+    return await chrome.tabs.sendMessage(tab.id, message, { frameId: 0 });
+  } catch {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+    return chrome.tabs.sendMessage(tab.id, message, { frameId: 0 });
+  }
+}
+
+// The visible part of the tab, and with `select`, the area the user picks on it.
+// Browser pages that take no content scripts get the whole visible part.
+async function captureVisible(tab, select) {
+  const image = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+  const shot = { frames: [{ image, y: 0 }], viewport: { width: tab.width, height: tab.height }, crop: null };
+  if (!select) return shot;
+  let picked;
+  try {
+    picked = await tell(tab, { type: 'select', image });
+  } catch {
+    return shot;
+  }
+  if (!picked) return null;
+  return { ...shot, viewport: picked.viewport, crop: picked.rect };
+}
+
+// Chrome allows two captureVisibleTab calls a second.
+const CAPTURE_GAP = 550;
+// Time for the page to paint and lazy images to start after a scroll.
+const SETTLE = 120;
+// Canvases stop working past 32767 pixels on a side.
+const MAX_HEIGHT = 32000;
+
+async function capturePage(tab) {
+  const page = await tell(tab, { type: 'page-start' });
+  const frames = [];
+  let last = 0;
+  try {
+    chrome.action.setBadgeBackgroundColor({ color: '#7c3aed' }).catch(() => {});
+    for (let y = 0; ; y += page.height) {
+      const at = await tell(tab, { type: 'page-scroll', y, first: frames.length === 0 });
+      await sleep(Math.max(SETTLE, CAPTURE_GAP - (Date.now() - last)));
+      last = Date.now();
+      frames.push({ image: await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' }), y: at });
+      const total = Math.min(page.total, MAX_HEIGHT / page.dpr);
+      chrome.action.setBadgeText({ tabId: tab.id, text: `${Math.min(99, Math.round((100 * (at + page.height)) / total))}%` })
+        .catch(() => {});
+      if (at + page.height >= total || frames.length > 200) break;
+    }
+  } finally {
+    await tell(tab, { type: 'page-end' }).catch(() => {});
+  }
+  return {
+    frames,
+    viewport: { width: page.width, height: page.height },
+    total: Math.min(page.total, MAX_HEIGHT / page.dpr),
+    crop: null,
+  };
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

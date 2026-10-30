@@ -1,9 +1,13 @@
 // The content script: Alt+click on an image opens it in a lightbox over the page,
-// and the page side of saving images (blob URLs, error toasts).
+// area selection and scrolling for screenshots, and the page side of saving
+// images (blob URLs, error toasts).
 
 (() => {
-  if (window.__snapt) return;
-  window.__snapt = true;
+  // A copy left over from before the extension was updated or reloaded can no
+  // longer reach the extension; it hands the page over to this one.
+  document.dispatchEvent(new CustomEvent('snapt:replace'));
+  const alive = new AbortController();
+  document.addEventListener('snapt:replace', () => alive.abort(), { once: true });
 
   const t = (key) => chrome.i18n.getMessage(key);
 
@@ -16,6 +20,16 @@
       return true;
     }
     if (message.type === 'toast') toast(message.text);
+    if (message.type === 'select') {
+      selectArea(message.image).then(reply);
+      return true;
+    }
+    if (message.type === 'page-start') reply(pageStart());
+    if (message.type === 'page-scroll') {
+      pageScroll(message.y, message.first).then(reply);
+      return true;
+    }
+    if (message.type === 'page-end') reply(pageEnd());
     return false;
   });
 
@@ -57,6 +71,162 @@
     }, 4000);
   }
 
+  // ---- Area selection ---------------------------------------------------------
+
+  // Shows the frozen screenshot of the tab and lets the user drag out an area,
+  // or click the element under the cursor. Resolves to the area in CSS pixels
+  // of the viewport, or null when cancelled with Esc or a right click.
+  function selectArea(image) {
+    return new Promise((resolve) => {
+      const { host, root } = createHost();
+      root.innerHTML = SELECT_TEMPLATE;
+      root.querySelector('.shot').src = image;
+      const box = root.querySelector('.box');
+      const label = root.querySelector('.label');
+      const surface = root.querySelector('.surface');
+      const hint = root.querySelector('.hint');
+      hint.textContent = t('selectHint');
+      const viewport = { width: innerWidth, height: innerHeight };
+      let start = null;
+      let rect = null;
+
+      const show = (r) => {
+        rect = r;
+        box.hidden = !r;
+        if (!r) return;
+        Object.assign(box.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.width}px`, height: `${r.height}px` });
+        const dpr = devicePixelRatio || 1;
+        label.textContent = `${Math.round(r.width * dpr)} × ${Math.round(r.height * dpr)}`;
+        label.style.top = r.y > 28 ? '-26px' : '6px';
+      };
+
+      // The page element under the cursor, clipped to the window: one click
+      // takes a card, an image or a code block without dragging.
+      const elementAt = (x, y) => {
+        host.style.setProperty('pointer-events', 'none', 'important');
+        const el = document.elementFromPoint(x, y);
+        host.style.removeProperty('pointer-events');
+        if (!el || el === document.documentElement || el === document.body) return null;
+        const r = el.getBoundingClientRect();
+        const x0 = Math.max(0, r.left);
+        const y0 = Math.max(0, r.top);
+        const x1 = Math.min(viewport.width, r.right);
+        const y1 = Math.min(viewport.height, r.bottom);
+        return x1 - x0 > 4 && y1 - y0 > 4 ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : null;
+      };
+
+      const finish = (result) => {
+        removeEventListener('keydown', onKey, true);
+        host.remove();
+        // Let the overlay disappear before anything else happens.
+        requestAnimationFrame(() => resolve(result && { rect: result, viewport }));
+      };
+      const onKey = (e) => {
+        if (e.key === 'Escape') finish(null);
+        else if (e.key === 'Enter') finish(rect ?? { x: 0, y: 0, ...viewport });
+        else return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      };
+      addEventListener('keydown', onKey, true);
+
+      surface.addEventListener('contextmenu', (e) => e.preventDefault());
+      surface.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) {
+          finish(null);
+          return;
+        }
+        surface.setPointerCapture(e.pointerId);
+        start = { x: e.clientX, y: e.clientY, dragged: false };
+        hint.hidden = true;
+      });
+      surface.addEventListener('pointermove', (e) => {
+        if (!start) {
+          show(elementAt(e.clientX, e.clientY));
+          return;
+        }
+        if (!start.dragged && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 4) return;
+        start.dragged = true;
+        const x = Math.max(0, Math.min(e.clientX, viewport.width));
+        const y = Math.max(0, Math.min(e.clientY, viewport.height));
+        show({
+          x: Math.min(start.x, x),
+          y: Math.min(start.y, y),
+          width: Math.abs(x - start.x),
+          height: Math.abs(y - start.y),
+        });
+      });
+      surface.addEventListener('pointerup', () => {
+        if (!start) return;
+        const picked = start.dragged ? rect : rect ?? { x: 0, y: 0, ...viewport };
+        start = null;
+        if (picked && picked.width >= 2 && picked.height >= 2) finish(picked);
+      });
+    });
+  }
+
+  const SELECT_TEMPLATE = `<style>
+    .shot { position: fixed; inset: 0; width: 100vw; height: 100vh; user-select: none; }
+    .surface { position: fixed; inset: 0; cursor: crosshair; background: rgb(0 0 0 / .4); }
+    .box { position: fixed; outline: 1px dashed #fff; box-shadow: 0 0 0 1px #8b5cf6;
+      background: transparent; backdrop-filter: brightness(1.67); pointer-events: none; }
+    .label { position: absolute; left: 0; padding: 3px 6px; border-radius: 5px; background: #8b5cf6; color: #fff;
+      font: 600 11px/1.2 system-ui, sans-serif; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .hint { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); padding: 8px 14px;
+      border-radius: 10px; background: rgb(28 25 38 / .92); color: #e8e6f0; font: 500 13px/1.3 system-ui, sans-serif;
+      pointer-events: none; }
+  </style>
+  <img class="shot" alt="">
+  <div class="surface"></div>
+  <div class="box" hidden><span class="label"></span></div>
+  <div class="hint"></div>`;
+
+  // ---- Whole page -------------------------------------------------------------
+
+  let page = null;
+
+  // Prepares the page for capture frame by frame: no scrollbar, no smooth
+  // scrolling, and a list of the fixed and sticky elements that would repeat on
+  // every frame.
+  function pageStart() {
+    const style = document.createElement('style');
+    style.textContent = `html { scrollbar-width: none !important; scroll-behavior: auto !important; }
+      html::-webkit-scrollbar { display: none !important; }`;
+    document.documentElement.append(style);
+    const pinned = [];
+    for (const el of document.querySelectorAll('body *')) {
+      const position = getComputedStyle(el).position;
+      if (position === 'fixed' || position === 'sticky') pinned.push([el, el.style.getPropertyValue('visibility'), el.style.getPropertyPriority('visibility')]);
+    }
+    page = { style, pinned, x: scrollX, y: scrollY };
+    const scroller = document.scrollingElement || document.documentElement;
+    return {
+      width: innerWidth,
+      height: innerHeight,
+      total: Math.max(scroller.scrollHeight, innerHeight),
+      dpr: devicePixelRatio || 1,
+    };
+  }
+
+  // Scrolls to `y` and returns where the page actually ended up.
+  async function pageScroll(y, first) {
+    if (!page) return y;
+    // Headers and floating buttons stay on the first frame only.
+    if (!first) for (const [el] of page.pinned) el.style.setProperty('visibility', 'hidden', 'important');
+    scrollTo(0, y);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return scrollY;
+  }
+
+  function pageEnd() {
+    if (!page) return true;
+    for (const [el, value, priority] of page.pinned) el.style.setProperty('visibility', value, priority);
+    page.style.remove();
+    scrollTo(page.x, page.y);
+    page = null;
+    return true;
+  }
+
   // ---- Lightbox -------------------------------------------------------------
 
   addEventListener('click', (e) => {
@@ -68,7 +238,7 @@
     e.preventDefault();
     e.stopImmediatePropagation();
     open(found);
-  }, true);
+  }, { capture: true, signal: alive.signal });
 
   // The image under the cursor: an <img> in the click path, one covered by
   // another element (galleries often put a link or overlay on top), or a CSS

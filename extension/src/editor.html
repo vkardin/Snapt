@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snapt</title>
+<link rel="icon" href="icons/32.png">
+<link rel="stylesheet" href="editor.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="group tools"></div>
+    <button class="fill" data-tip="fill"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg></button>
+    <div class="group colors"></div>
+    <label class="size"><input type="range" min="1" max="30" step="1"><output></output></label>
+    <span class="spacer"></span>
+    <div class="group">
+      <button data-action="undo" data-tip="undo"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
+      <button data-action="redo" data-tip="redo"><svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
+    </div>
+    <div class="group">
+      <button class="wide" data-action="copy" data-tip="copyTip"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg><span data-i18n="copy"></span></button>
+      <button class="wide primary" data-action="png" data-tip="savePngTip"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>PNG</button>
+      <button class="wide" data-action="jpg" data-tip="saveJpgTip">JPG</button>
+    </div>
+  </header>
+  <main>
+    <div class="stage">
+      <canvas class="view"></canvas>
+      <div class="outline" hidden></div>
+      <div class="caret" hidden></div>
+      <textarea class="typing" spellcheck="false" hidden></textarea>
+    </div>
+    <p class="status" data-i18n="loading"></p>
+  </main>
+  <div class="toast" hidden></div>
+  <script src="editor.js" type="module"></script>
+</body>
+</html>

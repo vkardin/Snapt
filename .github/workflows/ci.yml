@@ -70,6 +70,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: extension/wasm
       - name: Check the scripts
         run: for f in extension/src/*.js; do node --check "$f"; done
+      - name: Lint the editor core
+        working-directory: extension/wasm
+        run: |
+          cargo fmt --check
+          cargo clippy --release --locked --target wasm32-unknown-unknown -- -D warnings
       - run: python3 extension/build.py
+      - uses: actions/upload-artifact@v7
+        with:
+          name: snapt-extension
+          path: extension/dist/*.zip

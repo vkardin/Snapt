@@ -3,7 +3,7 @@
     "message": "Snapt: скриншоты и работа с картинками"
   },
   "description": {
-    "message": "Сохраняйте любую картинку как PNG или JPG, а Alt+клик по картинке увеличит её до пикселей."
+    "message": "Скриншоты области или всей страницы со стрелками, текстом и размытием. Картинки в PNG или JPG, Alt+клик для зума."
   },
   "savePng": {
     "message": "Сохранить картинку как PNG"
@@ -39,5 +39,96 @@
   },
   "zoomOut": {
     "message": "Уменьшить (−)"
+  },
+  "captureArea": {
+    "message": "Выделить область"
+  },
+  "captureVisible": {
+    "message": "Видимая часть страницы"
+  },
+  "capturePage": {
+    "message": "Вся страница"
+  },
+  "selectHint": {
+    "message": "Выделите область мышью или щёлкните по элементу. Enter — всё видимое, Esc — отмена."
+  },
+  "captureFailed": {
+    "message": "Snapt не смог сделать скриншот: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
+  },
+  "captureGone": {
+    "message": "Этот скриншот больше недоступен. Сделайте новый кнопкой Snapt."
+  },
+  "loading": {
+    "message": "Загрузка…"
+  },
+  "copy": {
+    "message": "Копировать"
+  },
+  "copied": {
+    "message": "Скопировано в буфер обмена"
+  },
+  "copyFailed": {
+    "message": "Не удалось скопировать: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
+  },
+  "copyTip": {
+    "message": "Копировать в буфер обмена (Ctrl+C)"
+  },
+  "savePngTip": {
+    "message": "Сохранить как PNG (Ctrl+S)"
+  },
+  "saveJpgTip": {
+    "message": "Сохранить как JPG (Ctrl+Shift+S)"
+  },
+  "undo": {
+    "message": "Отменить (Ctrl+Z)"
+  },
+  "redo": {
+    "message": "Повторить (Ctrl+Shift+Z)"
+  },
+  "fill": {
+    "message": "Заливка прямоугольников и эллипсов (F)"
+  },
+  "customColor": {
+    "message": "Любой цвет"
+  },
+  "toolPen": {
+    "message": "Карандаш"
+  },
+  "toolLine": {
+    "message": "Линия"
+  },
+  "toolArrow": {
+    "message": "Стрелка"
+  },
+  "toolRect": {
+    "message": "Прямоугольник"
+  },
+  "toolEllipse": {
+    "message": "Эллипс"
+  },
+  "toolMarker": {
+    "message": "Маркер"
+  },
+  "toolText": {
+    "message": "Текст"
+  },
+  "toolNumber": {
+    "message": "Нумерация"
+  },
+  "toolPixelate": {
+    "message": "Пикселизация"
+  },
+  "toolBlur": {
+    "message": "Размытие"
   }
 }
