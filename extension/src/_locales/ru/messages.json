@@ -1,0 +1,43 @@
+{
+  "name": {
+    "message": "Snapt: скриншоты и работа с картинками"
+  },
+  "description": {
+    "message": "Сохраняйте любую картинку как PNG или JPG, а Alt+клик по картинке увеличит её до пикселей."
+  },
+  "savePng": {
+    "message": "Сохранить картинку как PNG"
+  },
+  "saveJpg": {
+    "message": "Сохранить картинку как JPG"
+  },
+  "saveFailed": {
+    "message": "Snapt не смог сохранить картинку: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
+  },
+  "fit": {
+    "message": "По размеру окна (0)"
+  },
+  "actual": {
+    "message": "Реальный размер (1)"
+  },
+  "rotateLeft": {
+    "message": "Повернуть влево (Shift+R)"
+  },
+  "rotateRight": {
+    "message": "Повернуть вправо (R)"
+  },
+  "close": {
+    "message": "Закрыть (Esc)"
+  },
+  "zoomIn": {
+    "message": "Увеличить (+)"
+  },
+  "zoomOut": {
+    "message": "Уменьшить (−)"
+  }
+}
