@@ -349,6 +349,8 @@ function bindInput() {
 
 function down(e) {
   if (e.button !== 0) return;
+  // Keeps the focus where the editor puts it, such as on the text being typed.
+  e.preventDefault();
   const p = toImage(e);
   if (editing) {
     finishText();

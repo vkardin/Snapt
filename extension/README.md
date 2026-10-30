@@ -50,3 +50,6 @@ This writes the unpacked extension to `extension/dist/chrome` and
 - `src/content.js`: the lightbox, area selection, scrolling for whole-page
   captures and the page side of saving.
 - `src/_locales`: English, Russian and Ukrainian.
+
+Store texts, screenshots and permission justifications are in
+[store/](store/README.md).
