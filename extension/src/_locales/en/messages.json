@@ -1,0 +1,43 @@
+{
+  "name": {
+    "message": "Snapt: screenshots and image tools"
+  },
+  "description": {
+    "message": "Save any image as PNG or JPG, and Alt+click an image to zoom in to its pixels."
+  },
+  "savePng": {
+    "message": "Save image as PNG"
+  },
+  "saveJpg": {
+    "message": "Save image as JPG"
+  },
+  "saveFailed": {
+    "message": "Snapt could not save this image: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
+  },
+  "fit": {
+    "message": "Fit to window (0)"
+  },
+  "actual": {
+    "message": "Actual size (1)"
+  },
+  "rotateLeft": {
+    "message": "Rotate left (Shift+R)"
+  },
+  "rotateRight": {
+    "message": "Rotate right (R)"
+  },
+  "close": {
+    "message": "Close (Esc)"
+  },
+  "zoomIn": {
+    "message": "Zoom in (+)"
+  },
+  "zoomOut": {
+    "message": "Zoom out (−)"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "name": {
+    "message": "Snapt: скриншоти та робота із зображеннями"
+  },
+  "description": {
+    "message": "Зберігайте будь-яке зображення як PNG або JPG, а Alt+клік по зображенню збільшить його до пікселів."
+  },
+  "savePng": {
+    "message": "Зберегти зображення як PNG"
+  },
+  "saveJpg": {
+    "message": "Зберегти зображення як JPG"
+  },
+  "saveFailed": {
+    "message": "Snapt не зміг зберегти зображення: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
+  },
+  "fit": {
+    "message": "За розміром вікна (0)"
+  },
+  "actual": {
+    "message": "Реальний розмір (1)"
+  },
+  "rotateLeft": {
+    "message": "Повернути ліворуч (Shift+R)"
+  },
+  "rotateRight": {
+    "message": "Повернути праворуч (R)"
+  },
+  "close": {
+    "message": "Закрити (Esc)"
+  },
+  "zoomIn": {
+    "message": "Збільшити (+)"
+  },
+  "zoomOut": {
+    "message": "Зменшити (−)"
+  }
+}
