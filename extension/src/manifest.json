@@ -50,6 +50,9 @@
         "default": "Alt+Shift+P"
       },
       "description": "__MSG_capturePage__"
+    },
+    "screen": {
+      "description": "__MSG_captureScreen__"
     }
   },
   "content_security_policy": {

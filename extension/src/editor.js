@@ -54,20 +54,66 @@ async function main() {
   for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
   const id = location.hash.slice(1);
   const [shot, module] = await Promise.all([
-    chrome.runtime.sendMessage({ type: 'take', id }),
+    id === 'screen' ? null : chrome.runtime.sendMessage({ type: 'take', id }),
     WebAssembly.instantiateStreaming(fetch('snapt.wasm')),
   ]);
-  if (!shot) {
+  wasm = module.instance.exports;
+  let image;
+  if (id === 'screen') {
+    image = await pickScreen();
+  } else if (shot) {
+    document.title = shot.title ? `${shot.title} · Snapt` : 'Snapt';
+    image = await compose(shot);
+  } else {
     $('.status').textContent = t('captureGone');
     return;
   }
-  wasm = module.instance.exports;
-  document.title = shot.title ? `${shot.title} · Snapt` : 'Snapt';
-  const image = await compose(shot);
   load(image);
-  $('.status').remove();
+  document.querySelector('.status')?.remove();
   buildToolbar();
   bindInput();
+  document.body.classList.add('ready');
+}
+
+// A screen or a window the user picks in the browser's sharing dialog. Browsers
+// only open that dialog on a click, so the page asks for one first; sharing
+// stops as soon as one frame is taken.
+async function pickScreen() {
+  const status = $('.status');
+  status.classList.add('screen');
+  status.innerHTML = '<span></span><button class="wide primary"></button>';
+  status.firstChild.textContent = t('screenHint');
+  const button = status.lastChild;
+  button.textContent = t('screenButton');
+  for (;;) {
+    await new Promise((resolve) => button.addEventListener('click', resolve, { once: true }));
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { displaySurface: 'monitor' },
+        audio: false,
+        selfBrowserSurface: 'exclude',
+      });
+    } catch {
+      status.firstChild.textContent = t('screenCancelled');
+      continue;
+    }
+    try {
+      const video = document.createElement('video');
+      video.muted = true;
+      video.srcObject = stream;
+      await video.play();
+      // The first frame can still be black while the capture starts.
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const canvas = new OffscreenCanvas(video.videoWidth, video.videoHeight);
+      const c = canvas.getContext('2d');
+      c.drawImage(video, 0, 0);
+      scale = devicePixelRatio || 1;
+      return c.getImageData(0, 0, canvas.width, canvas.height);
+    } finally {
+      for (const track of stream.getTracks()) track.stop();
+    }
+  }
 }
 
 // Glues the frames of a capture into one image and crops it.

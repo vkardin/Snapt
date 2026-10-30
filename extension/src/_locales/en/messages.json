@@ -130,5 +130,17 @@
   },
   "toolBlur": {
     "message": "Blur"
+  },
+  "captureScreen": {
+    "message": "Screen or window"
+  },
+  "screenHint": {
+    "message": "Pick a screen or a window in the browser's sharing dialog. Snapt takes one frame and stops sharing right away; nothing leaves your computer."
+  },
+  "screenButton": {
+    "message": "Choose a screen or window"
+  },
+  "screenCancelled": {
+    "message": "Nothing was picked. Try again when you are ready."
   }
 }

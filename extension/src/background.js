@@ -144,11 +144,17 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
 });
 
 chrome.commands.onCommand.addListener((command, tab) => {
-  if (['visible', 'area', 'page'].includes(command)) capture(command, tab);
+  if (['visible', 'area', 'page', 'screen'].includes(command)) capture(command, tab);
 });
 
 async function capture(mode, tab) {
   if (!tab) return;
+  if (mode === 'screen') {
+    // Screens and other windows go through the browser's sharing dialog, which
+    // needs a page of its own.
+    await chrome.tabs.create({ url: chrome.runtime.getURL('editor.html#screen'), index: tab.index + 1 });
+    return;
+  }
   try {
     const shot = mode === 'page' ? await capturePage(tab) : await captureVisible(tab, mode === 'area');
     if (shot) await openEditor(shot, tab);
