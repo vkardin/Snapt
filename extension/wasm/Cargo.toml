@@ -2,6 +2,8 @@
 name = "snapt-wasm"
 version = "0.1.0"
 edition = "2024"
+# The desktop app's, so lints judge its shared modules the same way.
+rust-version = "1.85"
 license = "MIT"
 description = "Snapt's annotation code, compiled to WebAssembly for the browser extension."
 publish = false
