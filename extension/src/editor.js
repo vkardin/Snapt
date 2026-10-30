@@ -81,7 +81,8 @@ async function main() {
 async function pickScreen() {
   const status = $('.status');
   status.classList.add('screen');
-  status.innerHTML = '<span></span><button class="wide primary"></button>';
+  status.replaceChildren(document.createElement('span'), document.createElement('button'));
+  status.lastChild.className = 'wide primary';
   status.firstChild.textContent = t('screenHint');
   const button = status.lastChild;
   button.textContent = t('screenButton');
@@ -219,6 +220,13 @@ function updateOverlays() {
   }
 }
 
+// An icon from one of the path constants above.
+function svg(paths) {
+  const doc = new DOMParser().parseFromString(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">${paths}</svg>`, 'image/svg+xml');
+  return document.importNode(doc.documentElement, true);
+}
+
 const css = (color) => `#${color.toString(16).padStart(6, '0')}`;
 
 // ---- Toolbar -----------------------------------------------------------------
@@ -227,7 +235,7 @@ function buildToolbar() {
   const tools = $('.tools');
   TOOLS.forEach((tool, i) => {
     const button = document.createElement('button');
-    button.innerHTML = `<svg viewBox="0 0 24 24">${tool.icon}</svg>`;
+    button.append(svg(tool.icon));
     button.title = `${t(tool.name)} (${tool.key.toUpperCase()})`;
     button.addEventListener('click', () => setTool(i));
     tools.append(button);
@@ -242,7 +250,7 @@ function buildToolbar() {
   }
   const custom = document.createElement('label');
   custom.title = t('customColor');
-  custom.innerHTML = '<input type="color">';
+  custom.append(Object.assign(document.createElement('input'), { type: 'color' }));
   custom.firstChild.addEventListener('input', (e) => setColor(parseInt(e.target.value.slice(1), 16)));
   colors.append(custom);
 

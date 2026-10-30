@@ -45,6 +45,12 @@
     });
   }
 
+  // Fills `node` with markup from this script's own constants, parsed inertly.
+  function setMarkup(node, markup) {
+    const doc = new DOMParser().parseFromString(`<template>${markup}</template>`, 'text/html');
+    node.replaceChildren(doc.querySelector('template').content);
+  }
+
   // An isolated, unstyled host for our UI, so the page's CSS can't reach it.
   function createHost() {
     const host = document.createElement('div');
@@ -59,11 +65,11 @@
     const { host, root } = createHost();
     host.style.setProperty('inset', 'auto 16px auto auto', 'important');
     host.style.setProperty('top', '16px', 'important');
-    root.innerHTML = `<style>
+    setMarkup(root, `<style>
       div { font: 500 13px/1.4 system-ui, sans-serif; color: #fff; background: #1f1b2e;
         border-left: 3px solid #8b5cf6; border-radius: 8px; padding: 10px 14px; max-width: 360px;
         box-shadow: 0 8px 24px rgb(0 0 0 / .35); transition: opacity .3s; }
-    </style><div></div>`;
+    </style><div></div>`);
     root.querySelector('div').textContent = text;
     setTimeout(() => {
       root.querySelector('div').style.opacity = '0';
@@ -79,7 +85,7 @@
   function selectArea(image) {
     return new Promise((resolve) => {
       const { host, root } = createHost();
-      root.innerHTML = SELECT_TEMPLATE;
+      setMarkup(root, SELECT_TEMPLATE);
       root.querySelector('.shot').src = image;
       const box = root.querySelector('.box');
       const label = root.querySelector('.label');
@@ -287,7 +293,7 @@
       this.w = img.naturalWidth || rect.width;
       this.h = img.naturalHeight || rect.height;
       ({ host: this.host, root: this.root } = createHost());
-      this.root.innerHTML = TEMPLATE;
+      setMarkup(this.root, TEMPLATE);
       this.canvas = this.root.querySelector('canvas');
       this.ctx = this.canvas.getContext('2d');
       this.backdrop = this.root.querySelector('.backdrop');
