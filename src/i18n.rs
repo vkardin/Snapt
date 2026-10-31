@@ -135,6 +135,10 @@ pub enum T {
     ReplaceHintGnome,
     ReplaceHintLinux,
     ReplaceFailed,
+    ReplaceWhen,
+    ReplaceAsk,
+    ReplaceAuto,
+    ReplaceQuestion,
     AutoUpdate,
     CheckNow,
     Checking,
@@ -385,13 +389,13 @@ pub fn tr(lang: Lang, key: T) -> &'static str {
         (ReplaceSystem, Ru) => "Заменить системные скриншоты",
         (ReplaceSystem, Uk) => "Замінити системні знімки",
         (ReplaceHintWindows, En) => {
-            "PrtSc stops opening the Snipping Tool. Sign out and back in if it still does."
+            "PrtSc and Win+Shift+S open Snapt. Windows asks you to confirm Snapt for screenshot links."
         }
         (ReplaceHintWindows, Ru) => {
-            "PrtSc перестанет открывать «Ножницы». Если открывает, выйдите из системы и войдите снова."
+            "PrtSc и Win+Shift+S открывают Snapt. Для ссылок на скриншоты Windows попросит подтвердить выбор."
         }
         (ReplaceHintWindows, Uk) => {
-            "PrtSc перестане відкривати «Ножиці». Якщо відкриває, вийдіть із системи й увійдіть знову."
+            "PrtSc і Win+Shift+S відкривають Snapt. Для посилань на знімки Windows попросить підтвердити вибір."
         }
         (ReplaceHintMac, En) => {
             "Turn off Screenshots in Keyboard Shortcuts, then set Snapt to Cmd+Shift+3, 4 or 5."
@@ -423,6 +427,24 @@ pub fn tr(lang: Lang, key: T) -> &'static str {
         (ReplaceFailed, En) => "Could not change the system setting.",
         (ReplaceFailed, Ru) => "Не удалось изменить системную настройку.",
         (ReplaceFailed, Uk) => "Не вдалося змінити системне налаштування.",
+        (ReplaceWhen, En) => "When Windows takes it back",
+        (ReplaceWhen, Ru) => "Если Windows вернёт своё",
+        (ReplaceWhen, Uk) => "Якщо Windows поверне своє",
+        (ReplaceAsk, En) => "Ask",
+        (ReplaceAsk, Ru) => "Спросить",
+        (ReplaceAsk, Uk) => "Запитати",
+        (ReplaceAuto, En) => "Replace",
+        (ReplaceAuto, Ru) => "Заменить",
+        (ReplaceAuto, Uk) => "Замінити",
+        (ReplaceQuestion, En) => {
+            "Open Snapt instead of the Snipping Tool on PrtSc and Win+Shift+S?\n\nWindows will then show its default apps page: pick Snapt for the screenshot links there. You can switch back any time in Snapt's settings."
+        }
+        (ReplaceQuestion, Ru) => {
+            "Открывать Snapt вместо «Ножниц» по PrtSc и Win+Shift+S?\n\nЗатем Windows покажет страницу приложений по умолчанию: выберите там Snapt для ссылок на скриншоты. Вернуть «Ножницы» можно в любой момент в настройках Snapt."
+        }
+        (ReplaceQuestion, Uk) => {
+            "Відкривати Snapt замість «Ножиць» за PrtSc і Win+Shift+S?\n\nПотім Windows покаже сторінку програм за замовчуванням: виберіть там Snapt для посилань на знімки. Повернути «Ножиці» можна будь-коли в налаштуваннях Snapt."
+        }
         (AutoUpdate, En) => "Check for updates",
         (AutoUpdate, Ru) => "Проверять обновления",
         (AutoUpdate, Uk) => "Перевіряти оновлення",

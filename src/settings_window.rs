@@ -23,7 +23,7 @@ use crate::{
     icon,
     paint::{fill_round, rgb},
     platform,
-    settings::{ColorFormat, CopyAs, Feature, Format, Settings, Shortcut},
+    settings::{ColorFormat, CopyAs, Feature, Format, ReplaceMode, Settings, Shortcut},
     tray::hotkey_label,
 };
 
@@ -33,6 +33,8 @@ pub enum Action {
     Language(Option<Lang>),
     Autostart,
     ReplaceSystem,
+    /// Whether Snapt asks before taking over from the system tool or just does it.
+    ReplaceMode(ReplaceMode),
     /// The shortcut field started (true) or stopped (false) listening for keys.
     Recording(bool),
     Hotkey(Shortcut, String),
@@ -77,6 +79,7 @@ enum Id {
     Lang(Option<Lang>),
     Autostart,
     ReplaceSystem,
+    ReplaceMode(ReplaceMode),
     Hotkey(Shortcut),
     ResetHotkey(Shortcut),
     ColorFormat(ColorFormat),
@@ -105,7 +108,13 @@ pub enum Notice {
 }
 
 const WIDTH: f64 = 400.0;
-const HEIGHT: f64 = 640.0;
+/// Windows has one more row, for asking before replacing the Snipping Tool.
+const HEIGHT: f64 = if platform::REPLACE_MODES {
+    HEIGHT_WITH_MODES
+} else {
+    640.0
+};
+const HEIGHT_WITH_MODES: f64 = 680.0;
 const MARGIN: f32 = 20.0;
 /// The height of one settings row, and of the controls in it.
 const ROW: f32 = 40.0;
@@ -284,6 +293,7 @@ impl SettingsWindow {
             Id::Lang(lang) => Action::Language(lang),
             Id::Autostart => Action::Autostart,
             Id::ReplaceSystem => Action::ReplaceSystem,
+            Id::ReplaceMode(mode) => Action::ReplaceMode(mode),
             Id::Hotkey(which) => {
                 self.recording = (self.recording != Some(which)).then_some(which);
                 self.notice = None;
@@ -500,7 +510,9 @@ fn build(
     let (menu_x, menu_y) = (right - MENU_W, y + 6.0);
     let menu_open = menu_open && tab == Tab::General;
     match tab {
-        Tab::General => y = general(ui, settings, notice, menu_open, y),
+        Tab::General => {
+            y = general(ui, settings, notice, menu_open, platform::REPLACE_MODES, y);
+        }
         Tab::Shortcuts => y = shortcuts(ui, settings, recording, notice, y),
         Tab::Features => {
             for (feature, name) in [
@@ -589,6 +601,7 @@ fn general(
     settings: &Settings,
     notice: Option<Notice>,
     menu_open: bool,
+    replace_modes: bool,
     mut y: f32,
 ) -> f32 {
     let left = MARGIN;
@@ -626,9 +639,31 @@ fn general(
         Id::ReplaceSystem,
         t(T::ReplaceSystem),
         y,
-        settings.replace_system,
+        settings.replace_system.is_on(),
     );
-    y += ROW - 4.0;
+    y += ROW;
+    if replace_modes {
+        // Asking or not only matters while the switch is on, but the row stays
+        // put so the page doesn't jump; picking a mode turns the switch on.
+        ui.label(t(T::ReplaceWhen), left, y + 12.0, 13.0, TEXT);
+        let choices = [
+            (t(T::ReplaceAsk), ReplaceMode::Ask),
+            (t(T::ReplaceAuto), ReplaceMode::Auto),
+        ];
+        let seg_w = choices
+            .iter()
+            .map(|(name, _)| font::measure(name, 12.0).0 + 24.0)
+            .fold(60.0, f32::max);
+        let mut x = right - 2.0 * seg_w;
+        for (i, (name, mode)) in choices.iter().enumerate() {
+            let selected = settings.replace_system == *mode;
+            let id = Id::ReplaceMode(*mode);
+            ui.segment(id, name, x, y + 6.0, seg_w, selected, i == 0, i == 1);
+            x += seg_w;
+        }
+        y += ROW;
+    }
+    y -= 4.0;
     let (hint, color) = match notice {
         Some(Notice::ReplaceFailed) => (t(T::ReplaceFailed), ERROR),
         _ => (t(platform::replace_system_hint()), MUTED),
@@ -1028,6 +1063,43 @@ mod tests {
                     r.left() >= MARGIN - 0.5
                         && r.right() <= WIDTH as f32 - MARGIN + 0.5
                         && r.bottom() <= HEIGHT as f32 - 8.0,
+                    "{id:?} {r:?} in {lang:?}"
+                );
+            }
+        }
+    }
+
+    /// The Windows row for asking or replacing must fit too, though these tests run elsewhere.
+    #[test]
+    fn the_replace_modes_fit_in_every_language() {
+        for lang in Lang::ALL {
+            let _lang = crate::snapshot::language(lang);
+            let mut pixmap = Pixmap::new(WIDTH as u32, HEIGHT_WITH_MODES as u32).unwrap();
+            let mut ui = Ui {
+                pixmap: &mut pixmap,
+                scale: 1.0,
+                hover: None,
+                hits: Vec::new(),
+            };
+            let top = ui.divider(12.0 + H + 6.0);
+            let settings = Settings::default();
+            let end = general(&mut ui, &settings, None, false, true, top);
+            assert!(
+                end <= HEIGHT_WITH_MODES as f32 - 52.0,
+                "ends at {end} in {lang:?}"
+            );
+            // The label must not run under the two choices.
+            let label = font::measure(t(T::ReplaceWhen), 13.0).0;
+            let first = ui
+                .hits
+                .iter()
+                .find(|(id, _)| *id == Id::ReplaceMode(ReplaceMode::Ask))
+                .map(|(_, r)| r.left())
+                .unwrap();
+            assert!(MARGIN + label + 12.0 <= first, "{lang:?}");
+            for (id, r) in &ui.hits {
+                assert!(
+                    r.left() >= MARGIN - 0.5 && r.right() <= WIDTH as f32 - MARGIN + 0.5,
                     "{id:?} {r:?} in {lang:?}"
                 );
             }

@@ -39,6 +39,56 @@ pub fn replace_system_screenshot(on: bool, hotkey: &str) -> anyhow::Result<()> {
     system_screenshot::apply(on, hotkey)
 }
 
+/// Whether the system's screenshot tool still has some of its keys or links,
+/// so Snapt has something to ask about. Only Windows can tell.
+pub fn system_tool_active() -> bool {
+    #[cfg(target_os = "windows")]
+    return !crate::windows_shot::in_place();
+    #[cfg(not(target_os = "windows"))]
+    false
+}
+
+/// Whether the system lets the user pick between asking and replacing by itself.
+pub const REPLACE_MODES: bool = cfg!(target_os = "windows");
+
+/// Opens the page where the user makes Snapt the default for the screenshot
+/// links, unless it already is. Windows only lets the user make that choice.
+pub fn confirm_links() {
+    #[cfg(target_os = "windows")]
+    if !crate::windows_shot::links_are_snapt() {
+        crate::windows_shot::open_link_choice();
+    }
+}
+
+/// When Snapt is the default for the screenshot links, opens the page where
+/// the user gives them back to the system tool.
+pub fn release_links() {
+    #[cfg(target_os = "windows")]
+    if crate::windows_shot::links_are_snapt() {
+        crate::windows_shot::open_snipping_tool_choice();
+    }
+}
+
+/// Starts (`Some`) or stops catching the system's screenshot keys while Snapt
+/// runs. Only Windows needs it: its Win+Shift+S can't be reassigned.
+pub fn catch_system_keys(proxy: Option<winit::event_loop::EventLoopProxy<crate::app::UserEvent>>) {
+    #[cfg(target_os = "windows")]
+    match proxy {
+        Some(proxy) => crate::windows_shot::start_hook(proxy),
+        None => crate::windows_shot::stop_hook(),
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = proxy;
+}
+
+/// Lets the caught keys through while a shortcut field records keys.
+pub fn pause_system_keys(paused: bool) {
+    #[cfg(target_os = "windows")]
+    crate::windows_shot::pause_hook(paused);
+    #[cfg(not(target_os = "windows"))]
+    let _ = paused;
+}
+
 /// What the "replace the system screenshot tool" option does on this system.
 pub fn replace_system_hint() -> crate::i18n::T {
     use crate::i18n::T;
@@ -64,37 +114,12 @@ pub fn ocr_missing_hint() -> crate::i18n::T {
 
 #[cfg(target_os = "windows")]
 mod system_screenshot {
-    use std::os::windows::process::CommandExt;
-    use std::process::Command;
-
-    use anyhow::{Context, ensure};
-
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
     pub fn is_gnome() -> bool {
         false
     }
 
-    /// Windows 11 opens the Snipping Tool on PrtSc unless this per-user switch is off.
     pub fn apply(on: bool, _hotkey: &str) -> anyhow::Result<()> {
-        let value = if on { "0" } else { "1" };
-        let status = Command::new("reg")
-            .args([
-                "add",
-                r"HKCU\Control Panel\Keyboard",
-                "/v",
-                "PrintScreenKeyForSnippingEnabled",
-                "/t",
-                "REG_DWORD",
-                "/d",
-                value,
-                "/f",
-            ])
-            .creation_flags(CREATE_NO_WINDOW)
-            .status()
-            .context("failed to run reg.exe")?;
-        ensure!(status.success(), "reg.exe failed: {status}");
-        Ok(())
+        crate::windows_shot::apply(on)
     }
 }
 

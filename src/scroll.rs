@@ -110,7 +110,10 @@ impl Scroll {
         #[cfg(target_os = "windows")]
         let attributes = {
             use winit::platform::windows::WindowAttributesExtWindows;
-            attributes.with_skip_taskbar(true)
+            // Without a taskbar button a minimized panel would be a bare title bar.
+            attributes
+                .with_skip_taskbar(true)
+                .with_enabled_buttons(winit::window::WindowButtons::CLOSE)
         };
         let window = Rc::new(
             event_loop

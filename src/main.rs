@@ -31,6 +31,8 @@ mod sha256;
 mod snapshot;
 mod tray;
 mod updater;
+#[cfg(target_os = "windows")]
+mod windows_shot;
 
 use anyhow::Result;
 use winit::event_loop::EventLoop;
