@@ -606,7 +606,9 @@ mod tests {
 
     #[test]
     fn bad_lines_fall_back_to_defaults() {
-        let s = Settings::parse("nonsense\nstroke = lots\ncolor = blue\nformat = gif\ncopy_as = folder\nunknown = 1");
+        let s = Settings::parse(
+            "nonsense\nstroke = lots\ncolor = blue\nformat = gif\ncopy_as = folder\nunknown = 1",
+        );
         assert_eq!(s, Settings::default());
     }
 
