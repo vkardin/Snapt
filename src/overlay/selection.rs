@@ -176,6 +176,11 @@ impl Selection {
     }
 
     /// Whether the selection is being drawn or resized, not just moved.
+    /// A new area is being dragged out, not an existing one moved or resized.
+    pub fn is_creating(&self) -> bool {
+        matches!(self.drag, Drag::Creating { .. })
+    }
+
     pub fn is_sizing(&self) -> bool {
         matches!(self.drag, Drag::Creating { .. } | Drag::Resizing { .. })
     }
