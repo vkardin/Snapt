@@ -415,6 +415,35 @@ impl Settings {
         }
     }
 
+    /// Writes these settings to `path`, for moving them to another computer.
+    pub fn export_to(&self, path: &Path) -> Result<()> {
+        fs::write(path, self.to_text())
+            .with_context(|| format!("failed to write {}", path.display()))
+    }
+
+    /// Reads settings exported by `export_to`. Fails for a file that has
+    /// none of Snapt's keys, so a wrong pick changes nothing.
+    pub fn import_from(path: &Path) -> Result<Self> {
+        let text = fs::read_to_string(path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        anyhow::ensure!(
+            Self::looks_like_settings(&text),
+            "{} holds no Snapt settings",
+            path.display()
+        );
+        Ok(Self::parse(&text))
+    }
+
+    fn looks_like_settings(text: &str) -> bool {
+        text.lines().any(|line| {
+            line.split_once('=').is_some_and(|(key, _)| {
+                let key = key.trim();
+                Shortcut::ALL.iter().any(|w| w.code() == key)
+                    || ["folder", "format", "copy_as", "language", "disabled"].contains(&key)
+            })
+        })
+    }
+
     pub fn save(&self) -> Result<()> {
         let path = Self::path().context("could not find the config folder")?;
         if let Some(dir) = path.parent() {
@@ -771,6 +800,25 @@ mod tests {
             disabled: vec![Feature::Pin, Feature::Picker, Feature::Blur, Feature::Crop],
         };
         assert_eq!(Settings::parse(&s.to_text()), s);
+    }
+
+    #[test]
+    fn exported_settings_import_and_other_files_do_not() {
+        let dir = std::env::temp_dir().join(format!("snapt-export-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let s = Settings {
+            format: Format::Jpeg,
+            capture_cursor: true,
+            language: Some(Lang::Ru),
+            ..Settings::default()
+        };
+        let file = dir.join("snapt.ini");
+        s.export_to(&file).unwrap();
+        assert_eq!(Settings::import_from(&file).unwrap(), s);
+        let other = dir.join("notes.txt");
+        fs::write(&other, "shopping = milk, bread\n").unwrap();
+        assert!(Settings::import_from(&other).is_err());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

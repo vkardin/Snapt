@@ -827,6 +827,8 @@ impl App {
             }
             Action::History(limit) => self.set_history(limit),
             Action::Reset(section) => notice = self.reset(section),
+            Action::ExportSettings => self.export_settings(),
+            Action::ImportSettings => notice = self.import_settings(),
         }
         self.save_settings();
         if let Some(window) = &mut self.settings_window {
@@ -835,6 +837,74 @@ impl App {
             }
             window.request_redraw();
         }
+    }
+
+    /// Saves every setting to a file the user picks.
+    fn export_settings(&mut self) {
+        let picked = rfd::FileDialog::new()
+            .set_title(i18n::t(i18n::T::SettingsFile))
+            .set_file_name("snapt-settings.ini")
+            .add_filter("Snapt", &["ini"])
+            .save_file();
+        if let Some(path) = picked
+            && let Err(err) = self.settings.export_to(&path)
+        {
+            log::error!("{err:#}");
+        }
+    }
+
+    /// Replaces every setting with those in a file the user picks, applying
+    /// the ones that reach outside Snapt: start at login, the system tool,
+    /// the shortcuts and the language.
+    fn import_settings(&mut self) -> Option<Notice> {
+        let path = rfd::FileDialog::new()
+            .set_title(i18n::t(i18n::T::SettingsFile))
+            .add_filter("Snapt", &["ini"])
+            .pick_file()?;
+        let new = match Settings::import_from(&path) {
+            Ok(new) => new,
+            Err(err) => {
+                log::error!("{err:#}");
+                return Some(Notice::ImportFailed);
+            }
+        };
+        let old = std::mem::replace(&mut self.settings, new.clone());
+        // These are switched by actions that compare with what is in place now.
+        self.settings.autostart = old.autostart;
+        if new.autostart != old.autostart {
+            self.apply(Action::Autostart);
+        }
+        self.settings.history = old.history;
+        self.set_history(new.history);
+        self.settings.replace_system = old.replace_system;
+        let mut notice = None;
+        if new.replace_system != old.replace_system {
+            notice = self.set_replace_mode(new.replace_system);
+        }
+        // One at a time, so a key two shortcuts swapped is free when its turn comes.
+        self.settings.shortcuts = old.shortcuts.clone();
+        for which in Shortcut::ALL {
+            *self.settings.shortcut_mut(which) = String::new();
+        }
+        self.register_hotkeys();
+        for which in Shortcut::ALL {
+            let keys = new.shortcut(which).to_string();
+            if keys.is_empty() && which == Shortcut::Capture {
+                continue;
+            }
+            notice = notice.or(self.set_hotkey(which, keys));
+        }
+        if self.settings.shortcut(Shortcut::Capture).is_empty() {
+            *self.settings.shortcut_mut(Shortcut::Capture) = old.shortcut(Shortcut::Capture).into();
+            self.register_hotkey(Shortcut::Capture);
+        }
+        self.settings.apply_features();
+        i18n::set(self.settings.lang());
+        self.rebuild_tray();
+        if let Some(window) = &self.settings_window {
+            window.retitle();
+        }
+        notice
     }
 
     fn set_history(&mut self, limit: usize) {

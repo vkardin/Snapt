@@ -68,6 +68,10 @@ pub enum Action {
     InstallUpdate,
     /// Puts every setting of a section back to its default.
     Reset(Section),
+    /// Saves every setting to a file the user picks.
+    ExportSettings,
+    /// Replaces every setting with those in a file the user picks.
+    ImportSettings,
     /// Opens a web page.
     Link(&'static str),
     Close,
@@ -205,6 +209,8 @@ enum Id {
     InstallUpdate,
     Reset(Section),
     Link(&'static str),
+    ExportSettings,
+    ImportSettings,
 }
 
 /// A message shown in the window after something went wrong.
@@ -213,6 +219,7 @@ pub enum Notice {
     ShortcutTaken,
     ShortcutInvalid,
     ReplaceFailed,
+    ImportFailed,
 }
 
 /// The text field taking the keyboard.
@@ -601,6 +608,8 @@ impl SettingsWindow {
                 Action::Reset(section)
             }
             Id::Link(url) => Action::Link(url),
+            Id::ExportSettings => Action::ExportSettings,
+            Id::ImportSettings => Action::ImportSettings,
         };
         actions.push(action);
         actions
@@ -1119,6 +1128,34 @@ fn general(page: &mut Page, settings: &Settings, view: &View) {
         settings.autostart,
         true,
     );
+    let (hint, failed) = match view.notice {
+        Some(Notice::ImportFailed) => (t(T::ImportFailed), true),
+        _ => (t(T::HintSettingsFile), false),
+    };
+    let texts = [
+        t(T::SettingsFile),
+        hint,
+        "export",
+        "import",
+        "экспорт",
+        "импорт",
+        "експорт",
+        "імпорт",
+    ];
+    if page.matches(&texts) {
+        let import_w = font::measure(t(T::Import), 12.0).0 + 20.0;
+        let export_w = font::measure(t(T::Export), 12.0).0 + 20.0;
+        let hint_w = RIGHT - LEFT - import_w - export_w - 18.0;
+        let p = page.ui.p;
+        let tint = if failed { p.error } else { p.muted };
+        let y = page.row_tinted(t(T::SettingsFile), Some(hint), 0.0, hint_w, tint);
+        let x = RIGHT - import_w;
+        page.ui
+            .button(Id::ImportSettings, t(T::Import), x, y + 8.0, false);
+        let x = x - 6.0 - export_w;
+        page.ui
+            .button(Id::ExportSettings, t(T::Export), x, y + 8.0, false);
+    }
 }
 
 fn capture(page: &mut Page, settings: &Settings) {
@@ -1652,20 +1689,28 @@ impl<'u, 'a> Page<'u, 'a> {
     }
 
     fn row_at(&mut self, label: &str, hint: Option<&str>, indent: f32, hint_w: f32) -> f32 {
+        let muted = self.ui.p.muted;
+        self.row_tinted(label, hint, indent, hint_w, muted)
+    }
+
+    /// A row whose hint is in `tint`, such as the error color.
+    fn row_tinted(
+        &mut self,
+        label: &str,
+        hint: Option<&str>,
+        indent: f32,
+        hint_w: f32,
+        tint: u32,
+    ) -> f32 {
         self.started = true;
         let p = self.ui.p;
         let y = self.y;
         self.ui.label(label, LEFT + indent, y + 14.0, 13.0, p.text);
         let mut h = ROW;
         if let Some(hint) = hint {
-            let lines = self.ui.wrapped(
-                hint,
-                LEFT + indent,
-                y + 34.0,
-                hint_w - indent,
-                12.0,
-                p.muted,
-            );
+            let lines = self
+                .ui
+                .wrapped(hint, LEFT + indent, y + 34.0, hint_w - indent, 12.0, tint);
             h = 34.0 + lines + 10.0;
         }
         self.ui.fill(
