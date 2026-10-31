@@ -348,7 +348,8 @@ impl Default for Settings {
             stroke: 3.0,
             text_size: 20.0,
             history: crate::history::DEFAULT_LIMIT,
-            disabled: Vec::new(),
+            // Cropping changes the picture for good, so it waits until someone turns it on.
+            disabled: vec![Feature::Crop],
             file_name: DEFAULT_FILE_NAME.into(),
         }
     }
@@ -705,6 +706,13 @@ mod tests {
             "nonsense\nstroke = lots\ncolor = blue\nformat = gif\ncopy_as = folder\nunknown = 1",
         );
         assert_eq!(s, Settings::default());
+    }
+
+    #[test]
+    fn crop_starts_turned_off() {
+        assert!(!Settings::default().is_enabled(Feature::Crop));
+        // A choice saved earlier stays.
+        assert!(Settings::parse("disabled = ").is_enabled(Feature::Crop));
     }
 
     #[test]
