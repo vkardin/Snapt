@@ -141,6 +141,7 @@ pub enum T {
     ReplaceAsk,
     ReplaceAuto,
     ReplaceQuestion,
+    RestoreSystem,
     AutoUpdate,
     CheckNow,
     Checking,
@@ -445,6 +446,9 @@ pub fn tr(lang: Lang, key: T) -> &'static str {
         (ReplaceAuto, En) => "Replace",
         (ReplaceAuto, Ru) => "Заменить",
         (ReplaceAuto, Uk) => "Замінити",
+        (RestoreSystem, En) => "Restore the Windows defaults",
+        (RestoreSystem, Ru) => "Вернуть стандартные настройки Windows",
+        (RestoreSystem, Uk) => "Повернути стандартні налаштування Windows",
         (ReplaceQuestion, En) => {
             "Open Snapt instead of the Snipping Tool on PrtSc and Win+Shift+S?\n\nWindows will then show its default apps page: pick Snapt for the screenshot links there. You can switch back any time in Snapt's settings."
         }

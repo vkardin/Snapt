@@ -61,7 +61,8 @@ impl Pin {
             .map_err(|e| anyhow::anyhow!("failed to start the renderer: {e}"))?;
         let base = PhysicalSize::new(size.width.max(1), size.height.max(1));
         let attributes = Window::default_attributes()
-            .with_title("Snapt")
+            // Its own title tells the windows apart if one ever shows as a bare title bar.
+            .with_title("Snapt pin")
             .with_decorations(false)
             .with_resizable(false)
             .with_visible(false)
@@ -110,6 +111,11 @@ impl Pin {
         match event {
             WindowEvent::CloseRequested => return Some(PinAction::Close),
             WindowEvent::RedrawRequested => self.redraw(),
+            // Without a taskbar button a minimized pin is a bare title bar, so it comes back.
+            WindowEvent::Resized(size) if size.width == 0 || size.height == 0 => {
+                log::warn!("a pin was minimized; restoring it");
+                self.window.set_minimized(false);
+            }
             WindowEvent::Resized(_) => self.window.request_redraw(),
             WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
             WindowEvent::MouseInput {

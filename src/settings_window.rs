@@ -35,6 +35,8 @@ pub enum Action {
     ReplaceSystem,
     /// Whether Snapt asks before taking over from the system tool or just does it.
     ReplaceMode(ReplaceMode),
+    /// Gives PrtSc, Win+Shift+S and the screenshot links back to the system tool.
+    RestoreSystem,
     /// The shortcut field started (true) or stopped (false) listening for keys.
     Recording(bool),
     Hotkey(Shortcut, String),
@@ -80,6 +82,7 @@ enum Id {
     Autostart,
     ReplaceSystem,
     ReplaceMode(ReplaceMode),
+    RestoreSystem,
     Hotkey(Shortcut),
     ResetHotkey(Shortcut),
     ColorFormat(ColorFormat),
@@ -294,6 +297,7 @@ impl SettingsWindow {
             Id::Autostart => Action::Autostart,
             Id::ReplaceSystem => Action::ReplaceSystem,
             Id::ReplaceMode(mode) => Action::ReplaceMode(mode),
+            Id::RestoreSystem => Action::RestoreSystem,
             Id::Hotkey(which) => {
                 self.recording = (self.recording != Some(which)).then_some(which);
                 self.notice = None;
@@ -670,6 +674,11 @@ fn general(
     };
     ui.wrapped(hint, left, y, right - left, 12.0, color);
     y += 34.0;
+    if replace_modes {
+        // Works whatever the switch says, e.g. after an old version left PrtSc off.
+        ui.link(Id::RestoreSystem, t(T::RestoreSystem), left, y, 12.0);
+        y += 22.0;
+    }
     y = ui.divider(y);
 
     // Saving
