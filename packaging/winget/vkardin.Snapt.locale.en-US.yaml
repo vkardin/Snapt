@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.9.0.schema.json
 PackageIdentifier: vkardin.Snapt
-PackageVersion: 2.5.3
+PackageVersion: 3.0.0
 PackageLocale: en-US
 Publisher: vkardin
 PublisherUrl: https://github.com/vkardin
@@ -19,6 +19,6 @@ Tags:
   - screen-capture
   - annotation
   - lightshot
-ReleaseNotesUrl: https://github.com/vkardin/snapt/releases/tag/v2.5.3
+ReleaseNotesUrl: https://github.com/vkardin/snapt/releases/tag/v3.0.0
 ManifestType: defaultLocale
 ManifestVersion: 1.9.0

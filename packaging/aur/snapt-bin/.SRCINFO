@@ -1,6 +1,6 @@
 pkgbase = snapt-bin
 	pkgdesc = Fast, lightweight, open-source screenshot tool (prebuilt)
-	pkgver = 2.5.3
+	pkgver = 3.0.0
 	pkgrel = 1
 	url = https://github.com/vkardin/snapt
 	arch = x86_64
@@ -21,9 +21,9 @@ pkgbase = snapt-bin
 	optdepends = xdg-desktop-portal: screenshots and the shortcut on Wayland
 	provides = snapt
 	conflicts = snapt
-	source = https://github.com/vkardin/snapt/releases/download/v2.5.3/snapt_2.5.3_amd64.deb
-	source = LICENSE-2.5.3::https://raw.githubusercontent.com/vkardin/snapt/v2.5.3/LICENSE
-	sha256sums = d72ef35b7a7d35e6d82637aebb6b5fc862b6248e706a5c1848dc0d910995bd87
+	source = https://github.com/vkardin/snapt/releases/download/v3.0.0/snapt_3.0.0_amd64.deb
+	source = LICENSE-3.0.0::https://raw.githubusercontent.com/vkardin/snapt/v3.0.0/LICENSE
+	sha256sums = e250f33838f65b73726474e5924e40944d88c3e00f234ede4f6001a8e3e23da7
 	sha256sums = 3f3314be021ff5b67237b928b4e444c58345e5463a698301a13a6aa044eac75c
 
 pkgname = snapt-bin
