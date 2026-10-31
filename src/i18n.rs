@@ -150,6 +150,7 @@ pub enum T {
     // After the shot
     FullScreen,
     RepeatArea,
+    PinLast,
     Delayed,
     Seconds,
     History,
@@ -468,6 +469,9 @@ pub fn tr(lang: Lang, key: T) -> &'static str {
         (RepeatArea, En) => "Repeat last area",
         (RepeatArea, Ru) => "Повторить прошлую область",
         (RepeatArea, Uk) => "Повторити минулу область",
+        (PinLast, En) => "Pin last screenshot",
+        (PinLast, Ru) => "Закрепить последний снимок",
+        (PinLast, Uk) => "Закріпити останній знімок",
         (Delayed, En) => "Screenshot with delay",
         (Delayed, Ru) => "Скриншот с задержкой",
         (Delayed, Uk) => "Знімок із затримкою",
