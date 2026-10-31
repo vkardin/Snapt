@@ -48,6 +48,15 @@ impl ColorFormat {
     }
 }
 
+/// What copying a shot puts on the clipboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CopyAs {
+    /// The picture itself, for pasting into chats and editors.
+    Image,
+    /// An image file, for pasting into a folder in the file manager.
+    File,
+}
+
 /// Parts of Snapt that can be turned off in the settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Feature {
@@ -203,6 +212,7 @@ pub struct Settings {
     pub color_format: ColorFormat,
     pub folder: PathBuf,
     pub format: Format,
+    pub copy_as: CopyAs,
     /// Save straight into `folder` instead of asking where.
     pub quick_save: bool,
     /// Copying a shot also saves it into `folder`.
@@ -244,6 +254,7 @@ impl Default for Settings {
             color_format: ColorFormat::Hex,
             folder: default_folder(),
             format: Format::Png,
+            copy_as: CopyAs::Image,
             quick_save: false,
             save_on_copy: false,
             open_after_save: false,
@@ -359,6 +370,12 @@ impl Settings {
                         _ => Format::Png,
                     }
                 }
+                "copy_as" => {
+                    s.copy_as = match value.to_ascii_lowercase().as_str() {
+                        "file" => CopyAs::File,
+                        _ => CopyAs::Image,
+                    }
+                }
                 "quick_save" => s.quick_save = value == "true",
                 "save_on_copy" => s.save_on_copy = value == "true",
                 "open_after_save" => s.open_after_save = value == "true",
@@ -403,6 +420,11 @@ impl Settings {
         let _ = writeln!(t, "color_format = {format}");
         let _ = writeln!(t, "folder = {}", self.folder.display());
         let _ = writeln!(t, "format = {}", self.format.extension());
+        let copy_as = match self.copy_as {
+            CopyAs::Image => "image",
+            CopyAs::File => "file",
+        };
+        let _ = writeln!(t, "copy_as = {copy_as}");
         let _ = writeln!(t, "quick_save = {}", self.quick_save);
         let _ = writeln!(t, "save_on_copy = {}", self.save_on_copy);
         let _ = writeln!(t, "open_after_save = {}", self.open_after_save);
@@ -564,6 +586,7 @@ mod tests {
             color_format: ColorFormat::Rgb,
             folder: PathBuf::from("/tmp/shots"),
             format: Format::Jpeg,
+            copy_as: CopyAs::File,
             quick_save: true,
             save_on_copy: true,
             open_after_save: true,
@@ -583,7 +606,7 @@ mod tests {
 
     #[test]
     fn bad_lines_fall_back_to_defaults() {
-        let s = Settings::parse("nonsense\nstroke = lots\ncolor = blue\nformat = gif\nunknown = 1");
+        let s = Settings::parse("nonsense\nstroke = lots\ncolor = blue\nformat = gif\ncopy_as = folder\nunknown = 1");
         assert_eq!(s, Settings::default());
     }
 
