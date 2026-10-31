@@ -105,10 +105,14 @@ pub enum Feature {
     Blur,
     Spotlight,
     Crop,
+    /// Reads QR codes in the selection.
+    Qr,
+    /// Blurs e-mails, phones and card numbers found in the selection.
+    Redact,
 }
 
 impl Feature {
-    pub const ALL: [Feature; 19] = [
+    pub const ALL: [Feature; 21] = [
         Feature::Recognize,
         Feature::Search,
         Feature::Print,
@@ -128,6 +132,8 @@ impl Feature {
         Feature::Blur,
         Feature::Spotlight,
         Feature::Crop,
+        Feature::Qr,
+        Feature::Redact,
     ];
 
     fn code(self) -> &'static str {
@@ -151,6 +157,8 @@ impl Feature {
             Feature::Blur => "blur",
             Feature::Spotlight => "spotlight",
             Feature::Crop => "crop",
+            Feature::Qr => "qr",
+            Feature::Redact => "redact",
         }
     }
 
@@ -572,7 +580,7 @@ impl Settings {
         );
         let _ = writeln!(
             t,
-            "# rect, ellipse, marker, text, number, pixelate, blur, spotlight"
+            "# rect, ellipse, marker, text, number, pixelate, blur, spotlight, qr, redact"
         );
         let _ = writeln!(t, "disabled = {}", disabled.join(", "));
         let _ = writeln!(t, "# turned on, though off at first: crop");

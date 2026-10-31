@@ -38,6 +38,8 @@ pub enum UserEvent {
     UpdateDownloaded(Result<std::path::PathBuf, String>),
     /// Text recognition on a selection finished.
     Recognized(Result<String, ocr::Error>),
+    /// The search for personal data in a selection finished.
+    Redacted(Result<Vec<crate::redact::Area>, ocr::Error>),
     /// The scrolling screenshot grew.
     ScrollGrew,
     /// A system screenshot key was caught while Snapt replaces the system tool.
@@ -434,6 +436,27 @@ impl App {
         if let Some(overlay) = &mut self.overlay {
             overlay.set_status(Some(status.to_string()));
         }
+    }
+
+    /// Blurs the personal data found in the selection, or says why there is none.
+    fn redacted(&mut self, result: Result<Vec<crate::redact::Area>, ocr::Error>) {
+        let Some(overlay) = &mut self.overlay else {
+            return;
+        };
+        let status = match result {
+            Ok(areas) => {
+                if overlay.redacted(&areas) > 0 {
+                    return;
+                }
+                t(T::NothingToHide)
+            }
+            Err(ocr::Error::Missing) => t(platform::ocr_missing_hint()),
+            Err(ocr::Error::Failed(err)) => {
+                log::error!("looking for personal data failed: {err}");
+                t(T::RecognizeFailed)
+            }
+        };
+        overlay.set_status(Some(status.to_string()));
     }
 
     fn copy(&mut self, shot: &image::RgbaImage) -> Result<()> {
@@ -889,6 +912,7 @@ impl ApplicationHandler<UserEvent> for App {
             #[cfg(target_os = "linux")]
             UserEvent::PortalShortcut(hotkey, result) => self.portal_answered(hotkey, result),
             UserEvent::Recognized(result) => self.recognized(event_loop, result),
+            UserEvent::Redacted(result) => self.redacted(result),
             UserEvent::ScrollGrew => {
                 if let Some(scroll) = &self.scroll {
                     scroll.request_redraw();
@@ -981,6 +1005,13 @@ impl ApplicationHandler<UserEvent> for App {
             let proxy = self.proxy.clone();
             std::thread::spawn(move || {
                 let _ = proxy.send_event(UserEvent::Recognized(ocr::recognize(&image)));
+            });
+        }
+        if let Some(image) = overlay.take_redact() {
+            let proxy = self.proxy.clone();
+            std::thread::spawn(move || {
+                let areas = ocr::words(&image).map(|words| crate::redact::find(&words));
+                let _ = proxy.send_event(UserEvent::Redacted(areas));
             });
         }
         if let Some(text) = overlay.take_copied() {
