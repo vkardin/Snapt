@@ -217,7 +217,7 @@ impl App {
             Shortcut::FullScreen => self.copy_full_screen(),
             Shortcut::RepeatArea => self.start_capture(event_loop, self.last_area, false),
             Shortcut::PinLast if !self.history.entries().is_empty() => {
-                self.pin_from_history(event_loop, 0);
+                self.pin_from_history(event_loop, 0)
             }
             _ => {}
         }
