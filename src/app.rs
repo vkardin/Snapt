@@ -50,6 +50,9 @@ pub enum UserEvent {
     /// The desktop portal answered a request for the capture shortcut.
     #[cfg(target_os = "linux")]
     PortalShortcut(String, Result<crate::portal::Shortcut, String>),
+    /// The tray icon was clicked at this point of the screen.
+    #[cfg(target_os = "windows")]
+    TrayClick(PhysicalPosition<f64>),
 }
 
 /// The state of the portal shortcut.
@@ -69,6 +72,9 @@ pub struct App {
     /// The registered shortcuts, by [`Shortcut`].
     registered: [Option<HotKey>; Shortcut::ALL.len()],
     tray: Option<Tray>,
+    /// Snapt's own tray menu, made on the first click on the tray icon.
+    #[cfg(target_os = "windows")]
+    menu: Option<crate::tray_menu::MenuWindow>,
     overlay: Option<Overlay>,
     pins: Vec<Pin>,
     scroll: Option<Scroll>,
@@ -107,6 +113,8 @@ impl App {
             hotkeys,
             registered: [None; Shortcut::ALL.len()],
             tray: None,
+            #[cfg(target_os = "windows")]
+            menu: None,
             overlay: None,
             pins: Vec::new(),
             scroll: None,
@@ -633,7 +641,9 @@ impl App {
             }
             Command::OpenFolder => self.open_folder(),
             Command::Settings => self.open_settings(event_loop),
+            Command::CheckUpdates => self.check_updates(),
             Command::Update => self.start_update(),
+            Command::About => show_about(),
             Command::Quit => event_loop.exit(),
         }
     }
@@ -645,11 +655,83 @@ impl App {
         }
     }
 
+    /// Looks for a new version now; the menus and the settings show how it went.
+    fn check_updates(&mut self) {
+        if self.update_status != UpdateStatus::Checking {
+            self.update_status = UpdateStatus::Checking;
+            updater::check_now(self.proxy.clone());
+        }
+        self.update_status_changed();
+    }
+
+    /// Shows the update status in the tray menus and the settings window.
+    fn update_status_changed(&mut self) {
+        if let Some(tray) = &mut self.tray {
+            tray.set_update(&self.update_status);
+        }
+        #[cfg(target_os = "windows")]
+        if let Some(menu) = &self.menu
+            && menu.is_visible()
+        {
+            let model = self.menu_model();
+            if let Some(menu) = &mut self.menu {
+                menu.update(model);
+            }
+        }
+        self.redraw_settings();
+    }
+
+    /// What Snapt's own tray menu shows now.
+    #[cfg(target_os = "windows")]
+    fn menu_model(&self) -> crate::tray_menu::Model {
+        let keys = [
+            Shortcut::Capture,
+            Shortcut::Pick,
+            Shortcut::FullScreen,
+            Shortcut::RepeatArea,
+        ]
+        .map(|w| crate::tray::hotkey_label(self.settings.shortcut(w)));
+        let now = chrono::Local::now();
+        crate::tray_menu::Model {
+            version: env!("CARGO_PKG_VERSION"),
+            update: self.update_status.clone(),
+            keys,
+            picker: self.settings.is_enabled(Feature::Picker),
+            can_repeat: self.last_area.is_some(),
+            history: self
+                .history
+                .entries()
+                .iter()
+                .map(|e| e.label(now))
+                .collect(),
+        }
+    }
+
+    /// Opens Snapt's own menu at the clicked tray icon, or the system menu if it can't.
+    #[cfg(target_os = "windows")]
+    fn open_tray_menu(&mut self, event_loop: &ActiveEventLoop, at: PhysicalPosition<f64>) {
+        if self.menu.is_none() {
+            match crate::tray_menu::MenuWindow::open(event_loop) {
+                Ok(menu) => self.menu = Some(menu),
+                Err(err) => {
+                    log::error!("{err:#}");
+                    if let Some(tray) = &self.tray {
+                        tray.show_menu();
+                    }
+                    return;
+                }
+            }
+        }
+        let model = self.menu_model();
+        if let Some(menu) = &mut self.menu {
+            menu.toggle(event_loop, at, model);
+        }
+    }
+
     /// Recreates the tray, e.g. after a language change or when an update is out.
     fn rebuild_tray(&mut self) {
         self.tray = None;
-        let version = self.update.as_ref().map(|u| u.version.as_str());
-        match Tray::new(&self.settings, version) {
+        match Tray::new(&self.settings, &self.update_status) {
             Ok(mut tray) => {
                 tray.set_history(self.history.entries());
                 tray.set_can_repeat(self.last_area.is_some());
@@ -674,7 +756,7 @@ impl App {
         if self.update_status != UpdateStatus::Downloading {
             self.update_status = UpdateStatus::Downloading;
             updater::download(self.proxy.clone(), update);
-            self.redraw_settings();
+            self.update_status_changed();
         }
     }
 
@@ -806,10 +888,7 @@ impl App {
                     self.watch_updates();
                 }
             }
-            Action::CheckUpdates => {
-                self.update_status = UpdateStatus::Checking;
-                updater::check_now(self.proxy.clone());
-            }
+            Action::CheckUpdates => self.check_updates(),
             Action::InstallUpdate => self.start_update(),
             Action::Link(url) => {
                 if let Err(err) = open::that_detached(url) {
@@ -1074,14 +1153,16 @@ impl ApplicationHandler<UserEvent> for App {
                 if !manual && !self.settings.auto_update {
                     return;
                 }
+                // A download under way keeps its status; the daily check doesn't interrupt it.
+                if self.update_status == UpdateStatus::Downloading {
+                    return;
+                }
+                let was_top = matches!(self.update_status, UpdateStatus::Available(_));
                 match result {
                     Ok(Some(update)) => {
                         log::info!("Snapt {} is available", update.version);
                         self.update_status = UpdateStatus::Available(update.version.clone());
-                        if self.update.as_ref() != Some(&update) {
-                            self.update = Some(update);
-                            self.rebuild_tray();
-                        }
+                        self.update = Some(update);
                     }
                     Ok(None) => self.update_status = UpdateStatus::UpToDate,
                     Err(err) => {
@@ -1089,7 +1170,11 @@ impl ApplicationHandler<UserEvent> for App {
                         self.update_status = UpdateStatus::Failed;
                     }
                 }
-                self.redraw_settings();
+                // The system menu moves the update item to the top, which takes a new menu.
+                if was_top != matches!(self.update_status, UpdateStatus::Available(_)) {
+                    self.rebuild_tray();
+                }
+                self.update_status_changed();
             }
             UserEvent::UpdateDownloaded(Ok(path)) => match updater::install(&path) {
                 // Quit so the installer can replace Snapt.
@@ -1097,14 +1182,18 @@ impl ApplicationHandler<UserEvent> for App {
                 Err(err) => {
                     log::error!("failed to install the update: {err:#}");
                     self.update_status = UpdateStatus::Failed;
-                    self.redraw_settings();
+                    self.rebuild_tray();
+                    self.update_status_changed();
                 }
             },
             UserEvent::UpdateDownloaded(Err(err)) => {
                 log::error!("failed to download the update: {err}");
                 self.update_status = UpdateStatus::Failed;
-                self.redraw_settings();
+                self.rebuild_tray();
+                self.update_status_changed();
             }
+            #[cfg(target_os = "windows")]
+            UserEvent::TrayClick(at) => self.open_tray_menu(event_loop, at),
             UserEvent::Menu(event) => {
                 let command = self.tray.as_ref().and_then(|t| t.command(&event.id));
                 if let Some(command) = command {
@@ -1115,6 +1204,15 @@ impl ApplicationHandler<UserEvent> for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        #[cfg(target_os = "windows")]
+        if let Some(menu) = &mut self.menu
+            && menu.id() == id
+        {
+            if let Some(command) = menu.window_event(event) {
+                self.run_command(event_loop, command);
+            }
+            return;
+        }
         if let Some(window) = &mut self.settings_window
             && window.id() == id
         {
@@ -1210,4 +1308,20 @@ fn centered(
     let x = origin.x + (screen.width as i32 - w as i32) / 2;
     let y = origin.y + (screen.height as i32 - h as i32) / 2;
     (PhysicalPosition::new(x, y), PhysicalSize::new(w, h))
+}
+
+/// Shows the version and the website, as the system menus' About item does.
+fn show_about() {
+    std::thread::spawn(|| {
+        rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Info)
+            .set_title(t(T::About))
+            .set_description(format!(
+                "Snapt {}\n\n{}\n\n{}",
+                env!("CARGO_PKG_VERSION"),
+                t(T::Description),
+                env!("CARGO_PKG_HOMEPAGE"),
+            ))
+            .show();
+    });
 }

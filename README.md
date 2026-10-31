@@ -33,7 +33,8 @@ No accounts, no cloud, a few megabytes on disk.
 - Draw on it: pen, line, arrow, rectangle, ellipse, marker, text and numbered steps, in
   any color, or one picked from the screen with the eyedropper. Pixelate or blur what should
   stay private, put what matters in a spotlight that dims the rest, and fill rectangles and
-  ellipses with color. Crop the selection to a smaller area without losing the drawings.
+  ellipses with color. Crop the selection to a smaller area without losing the drawings
+  (off by default; turn it on in the settings, on **Editor**).
   Click a shape to move it, or delete it with `Delete`.
 - A color picker on its own shortcut (`Ctrl+Alt+C`) or in the tray: a magnifier shows the
   pixels under the cursor and a click copies the color as HEX or RGB.
@@ -119,13 +120,20 @@ To record a video, select an area and press `Ctrl+Shift+R` or the camera button.
 10 frames a second, for up to two minutes; the panel shows the time. Press `Enter` or click
 the panel to stop and choose where to save it: MP4 if `ffmpeg` is on the `PATH`, GIF always.
 
+On Windows the tray menu is Snapt's own: icons next to every item, the shortcuts, the delays
+as buttons, and the update right inside, in the system's light or dark theme; arrow keys
+and `Enter` work too. On macOS and Linux it is the system menu with the same icons, since
+there the menu bar or the desktop draws tray menus itself.
+
 The tray menu also has:
 
 - **Copy full screen**: all monitors at once, straight to the clipboard;
 - **Repeat last area**: opens the screenshot with the area you selected last time;
 - **Screenshot with delay**: in 3, 5 or 10 seconds, to catch menus and tooltips;
 - **Recent screenshots**: the last 10, kept between restarts; click one to pin it. Set a
-  **Pin last screenshot** shortcut in the settings to pin the newest one from anywhere.
+  **Pin last screenshot** shortcut in the settings to pin the newest one from anywhere;
+- **Check for updates**: looks right away and shows the result in the menu, or offers
+  **Update to Snapt X.Y.Z** at the top when a new version is out.
 
 ### Settings
 
@@ -139,7 +147,7 @@ Pick **Settings…** in the tray menu. There you can:
 - on **Features**, turn off text recognition, scrolling screenshots, pinning, image search,
   printing, video recording or the color picker; their buttons and shortcuts go away;
 - on **Editor**, turn off any drawing tool, from the pen to blur, spotlight and crop; it
-  leaves the toolbar and its key stops working;
+  leaves the toolbar and its key stops working. Crop starts turned off;
 - let Snapt replace the system screenshot tool: on Windows, PrtSc and Win+Shift+S open Snapt
   instead of the Snipping Tool, Snapt can be picked for the `ms-screenclip` and
   `ms-screensketch` links (Windows asks you to confirm that one), and Snapt either asks first
