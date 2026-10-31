@@ -142,5 +142,113 @@
   },
   "screenCancelled": {
     "message": "Nothing was picked. Try again when you are ready."
+  },
+  "hintArea": {
+    "message": "Drag, or click an element"
+  },
+  "hintVisible": {
+    "message": "What you see right now"
+  },
+  "hintPage": {
+    "message": "Scrolled and glued into one image"
+  },
+  "hintScreen": {
+    "message": "Any screen or app window"
+  },
+  "tipLightbox": {
+    "message": "Alt+click any image to zoom in. Right-click it to save as PNG or JPG."
+  },
+  "openSettings": {
+    "message": "Settings"
+  },
+  "website": {
+    "message": "Website"
+  },
+  "optTitle": {
+    "message": "Snapt settings"
+  },
+  "optHeroTitle": {
+    "message": "Screenshots right in the browser"
+  },
+  "optHeroText": {
+    "message": "An area, the visible part or the whole page, then arrows, text and blur in the same editor as the desktop app."
+  },
+  "optShortcuts": {
+    "message": "Shortcuts"
+  },
+  "optShortcutsText": {
+    "message": "Take a screenshot without opening the popup. The browser keeps the keys, so you change them there."
+  },
+  "optChangeShortcuts": {
+    "message": "Change shortcuts"
+  },
+  "optShortcutsFirefox": {
+    "message": "In Firefox: open about:addons, click the gear icon and pick Manage Extension Shortcuts."
+  },
+  "optNotSet": {
+    "message": "not set"
+  },
+  "optFeatures": {
+    "message": "What Snapt can do"
+  },
+  "featCaptureTitle": {
+    "message": "Four kinds of screenshots"
+  },
+  "featCaptureText": {
+    "message": "An area or a single element, the visible part, the whole scrolled page, or any screen and window."
+  },
+  "featEditorTitle": {
+    "message": "Editor"
+  },
+  "featEditorText": {
+    "message": "Pen, arrows, shapes, marker, text, numbered steps, pixelate and blur. Copy, or save as PNG or JPG."
+  },
+  "featSaveTitle": {
+    "message": "Save image as PNG / JPG"
+  },
+  "featSaveText": {
+    "message": "Right-click any image, WebP, AVIF and SVG included, and save it in a format every app opens."
+  },
+  "featLightboxTitle": {
+    "message": "Lightbox"
+  },
+  "featLightboxText": {
+    "message": "Alt+click an image to open it over the page. Zoom down to pixels, pan and rotate."
+  },
+  "optPrivacy": {
+    "message": "Everything happens on your computer. Snapt has no servers, no accounts and no tracking."
+  },
+  "optMore": {
+    "message": "More from the author"
+  },
+  "optMoreText": {
+    "message": "Free and open source, like Snapt."
+  },
+  "appDesktop": {
+    "message": "Snapt for desktop"
+  },
+  "appDesktopMeta": {
+    "message": "App · Windows, macOS, Linux"
+  },
+  "appDesktopText": {
+    "message": "The same editor for the whole screen: one key, select, annotate, done."
+  },
+  "appExtensionMeta": {
+    "message": "Browser extension · Chrome, Edge, Firefox"
+  },
+  "appLevelerText": {
+    "message": "Evens out the loudness of any video, so quiet dialogue and loud scenes sound alike."
+  },
+  "appGlowText": {
+    "message": "Soft light in the colours of the picture around any video, like an LED strip behind a TV."
+  },
+  "license": {
+    "message": "MIT license"
+  },
+  "source": {
+    "message": "Source"
+  },
+  "reportBug": {
+    "message": "Report a bug"
   }
 }

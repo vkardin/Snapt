@@ -1,14 +1,51 @@
-:root { color-scheme: light dark; --bg: #fff; --fg: #1d1b26; --muted: #6e6a80; --hover: #f1eefb; --accent: #7c3aed; }
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #1c1926; --fg: #ece9f5; --muted: #9a94b0; --hover: #2b2638; --accent: #a78bfa; }
+/* The toolbar popup, in the colours of the Snapt website. */
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff; --soft: #f6f4fe; --text: #1c1530; --muted: #5d5675; --line: #e6e1f5;
+  --brand: #7c3aed; --chip: #f1ebff; --hero-a: #1e1b4b; --hero-b: #4c1d95;
 }
-body { margin: 0; width: 280px; padding: 6px; background: var(--bg); color: var(--fg);
-  font: 13px/1.3 system-ui, sans-serif; }
-header { display: flex; align-items: center; gap: 8px; padding: 8px 10px 10px; font-weight: 600; font-size: 14px; }
-button { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; width: 100%;
-  padding: 9px 10px; border-radius: 8px; cursor: pointer; }
-button:hover, button:focus-visible { background: var(--hover); }
-svg { width: 18px; height: 18px; flex: none; fill: none; stroke: var(--accent); stroke-width: 1.8;
-  stroke-linecap: round; stroke-linejoin: round; }
-span { flex: 1; }
-kbd { font: 11px/1 system-ui, sans-serif; color: var(--muted); }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f0c1d; --soft: #17132b; --text: #ece9f7; --muted: #a49dbd; --line: #2a2445;
+    --brand: #a78bfa; --chip: #231c40; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; width: 360px; background: var(--bg); color: var(--text);
+  font: 13px/1.4 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+button { all: unset; box-sizing: border-box; cursor: pointer; }
+svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+.top { display: flex; align-items: center; gap: 10px; padding: 14px 12px 14px 16px; color: #fff;
+  background:
+    linear-gradient(rgb(255 255 255 / .05) 1px, transparent 1px) 0 0 / 16px 16px,
+    linear-gradient(90deg, rgb(255 255 255 / .05) 1px, transparent 1px) 0 0 / 16px 16px,
+    linear-gradient(135deg, var(--hero-a), var(--hero-b)); }
+.top img { border-radius: 8px; box-shadow: 0 4px 14px rgb(0 0 0 / .3); }
+.title { flex: 1; display: flex; align-items: baseline; gap: 8px; }
+.title b { font-size: 17px; font-weight: 800; letter-spacing: -.3px; }
+.version { padding: 1px 7px; border-radius: 999px; background: rgb(255 255 255 / .14); color: #ddd6fe;
+  font-size: 11px; font-weight: 600; }
+.icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; color: #ddd6fe; }
+.icon:hover, .icon:focus-visible { background: rgb(255 255 255 / .12); color: #fff; }
+.icon svg { width: 18px; height: 18px; }
+
+main { display: grid; gap: 2px; padding: 8px; }
+.shot { display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 12px;
+  border: 1px solid transparent; transition: background .12s, border-color .12s; }
+.shot:hover, .shot:focus-visible { background: var(--soft); border-color: var(--line); }
+.shot i { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 10px;
+  background: var(--chip); color: var(--brand); }
+.shot:hover i, .shot:focus-visible i { background: var(--brand); color: #fff; }
+.shot i svg { width: 19px; height: 19px; }
+.shot span { flex: 1; display: grid; min-width: 0; }
+.shot b { font-weight: 600; font-size: 13.5px; }
+.shot small { color: var(--muted); font-size: 12px; }
+kbd { flex: none; font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted);
+  padding: 0 6px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; background: var(--soft); }
+kbd:empty { display: none; }
+
+footer { margin: 0 8px; padding: 10px 6px 12px; border-top: 1px solid var(--line); }
+.tip { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+.tip svg { width: 15px; height: 15px; flex: none; margin-top: 1px; color: var(--brand); }
+nav { display: flex; gap: 16px; }
+.link { color: var(--brand); font-weight: 600; font-size: 12.5px; text-decoration: none; }
+.link:hover, .link:focus-visible { text-decoration: underline; }
