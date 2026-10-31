@@ -65,7 +65,7 @@ pub struct App {
     // The manager unregisters its hotkeys when dropped, so it must live as long as the app.
     hotkeys: GlobalHotKeyManager,
     /// The registered shortcuts, by [`Shortcut`].
-    registered: [Option<HotKey>; 10],
+    registered: [Option<HotKey>; Shortcut::ALL.len()],
     tray: Option<Tray>,
     overlay: Option<Overlay>,
     pins: Vec<Pin>,
@@ -103,7 +103,7 @@ impl App {
         };
         let mut app = Self {
             hotkeys,
-            registered: [None; 10],
+            registered: [None; Shortcut::ALL.len()],
             tray: None,
             overlay: None,
             pins: Vec::new(),
@@ -839,35 +839,17 @@ impl ApplicationHandler<UserEvent> for App {
                 let which = Shortcut::ALL
                     .into_iter()
                     .find(|w| self.registered[*w as usize].is_some_and(|h| h.id() == event.id()));
-                if let Some(which) = which {
-                    self.run_shortcut(event_loop, which);
-                }
-            }
-            // PrtSc runs whichever shortcut is set to it, a screenshot by default.
-            #[cfg(target_os = "windows")]
-            UserEvent::SystemKey(key) => {
-                let which = match key {
-                    crate::windows_shot::SystemKey::PrintScreen => Shortcut::ALL
-                        .into_iter()
-                        .filter(|w| w.is_global())
-                        .find(|w| {
-                            self.settings
-                                .shortcut(*w)
-                                .eq_ignore_ascii_case("PrintScreen")
-                        })
-                        .unwrap_or(Shortcut::Capture),
-                    crate::windows_shot::SystemKey::WinShiftS => Shortcut::Capture,
-                };
-                self.run_shortcut(event_loop, which);
-            }
-            UserEvent::ReplaceAnswer(yes) => {
-                if yes {
-                    self.take_over(true);
-                } else {
-                    // No means the system tool keeps everything, and Snapt stops asking.
-                    self.give_back();
-                    self.settings.replace_system = ReplaceMode::Off;
-                    self.save_settings();
+                match which {
+                    Some(Shortcut::Capture) => self.start_capture(event_loop, None, false),
+                    Some(Shortcut::Pick) => self.start_capture(event_loop, None, true),
+                    Some(Shortcut::FullScreen) => self.copy_full_screen(),
+                    Some(Shortcut::RepeatArea) => {
+                        self.start_capture(event_loop, self.last_area, false)
+                    }
+                    Some(Shortcut::PinLast) if !self.history.entries().is_empty() => {
+                        self.pin_from_history(event_loop, 0)
+                    }
+                    _ => {}
                 }
                 self.redraw_settings();
             }

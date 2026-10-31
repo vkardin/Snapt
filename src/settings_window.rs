@@ -744,6 +744,7 @@ fn shortcuts(
             Shortcut::Pick => t(T::PickColor),
             Shortcut::FullScreen => t(T::FullScreen),
             Shortcut::RepeatArea => t(T::RepeatArea),
+            Shortcut::PinLast => t(T::PinLast),
             Shortcut::Recognize => t(T::Recognize),
             Shortcut::Scroll => t(T::Scroll),
             Shortcut::Record => t(T::Record),
