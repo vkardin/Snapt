@@ -1335,6 +1335,8 @@ mod tests {
 
     #[test]
     fn long_histories_scroll_and_the_menu_keeps_its_width() {
+        // Widths depend on the language, which other tests switch meanwhile.
+        let _lang = crate::snapshot::language(crate::i18n::Lang::En);
         let mut model = model();
         model.history = (0..30).map(|i| format!("shot {i}")).collect();
         let (main_w, _) = size(&model, Page::Main, 0);
