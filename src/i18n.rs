@@ -230,6 +230,11 @@ pub enum T {
     HidePersonal,
     Redacting,
     NothingToHide,
+    SettingsFile,
+    HintSettingsFile,
+    Export,
+    Import,
+    ImportFailed,
 }
 
 /// The current language's text for `key`.
@@ -788,6 +793,27 @@ pub fn tr(lang: Lang, key: T) -> &'static str {
         (NothingToHide, En) => "No e-mails, phones or card numbers found.",
         (NothingToHide, Ru) => "Почт, телефонов и номеров карт не найдено.",
         (NothingToHide, Uk) => "Пошт, телефонів і номерів карток не знайдено.",
+        (SettingsFile, En) => "Settings file",
+        (SettingsFile, Ru) => "Файл настроек",
+        (SettingsFile, Uk) => "Файл налаштувань",
+        (HintSettingsFile, En) => {
+            "Save all settings to a file to keep a copy or move them to another computer."
+        }
+        (HintSettingsFile, Ru) => {
+            "Сохраните все настройки в файл, чтобы сделать копию или перенести их на другой компьютер."
+        }
+        (HintSettingsFile, Uk) => {
+            "Збережіть усі налаштування у файл, щоб мати копію або перенести їх на інший комп’ютер."
+        }
+        (Export, En) => "Export…",
+        (Export, Ru) => "Экспорт…",
+        (Export, Uk) => "Експорт…",
+        (Import, En) => "Import…",
+        (Import, Ru) => "Импорт…",
+        (Import, Uk) => "Імпорт…",
+        (ImportFailed, En) => "That file holds no Snapt settings; nothing changed.",
+        (ImportFailed, Ru) => "В этом файле нет настроек Snapt, ничего не изменилось.",
+        (ImportFailed, Uk) => "У цьому файлі немає налаштувань Snapt, нічого не змінилося.",
     }
 }
 
@@ -819,6 +845,8 @@ mod tests {
                 T::HidePersonal,
                 T::Redacting,
                 T::NothingToHide,
+                T::HintSettingsFile,
+                T::ImportFailed,
             ] {
                 for c in tr(lang, key).chars() {
                     assert!(crate::font::has_glyph(c), "{c:?} in {key:?} ({lang:?})");
