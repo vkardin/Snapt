@@ -175,6 +175,12 @@ pub enum T {
     RecordTitle,
     GifVideo,
     Mp4Video,
+    // 3.0
+    ReadQr,
+    NoQr,
+    HidePersonal,
+    Redacting,
+    NothingToHide,
 }
 
 /// The current language's text for `key`.
@@ -559,6 +565,21 @@ pub fn tr(lang: Lang, key: T) -> &'static str {
         (Mp4Video, En) => "MP4 video",
         (Mp4Video, Ru) => "Видео MP4",
         (Mp4Video, Uk) => "Відео MP4",
+        (ReadQr, En) => "Read QR code",
+        (ReadQr, Ru) => "Прочитать QR-код",
+        (ReadQr, Uk) => "Прочитати QR-код",
+        (NoQr, En) => "No QR code found in the selection.",
+        (NoQr, Ru) => "В выделенной области нет QR-кода.",
+        (NoQr, Uk) => "У виділеній області немає QR-коду.",
+        (HidePersonal, En) => "Hide personal data",
+        (HidePersonal, Ru) => "Скрыть личные данные",
+        (HidePersonal, Uk) => "Приховати особисті дані",
+        (Redacting, En) => "Looking for e-mails, phones and card numbers…",
+        (Redacting, Ru) => "Ищем почты, телефоны и номера карт…",
+        (Redacting, Uk) => "Шукаємо пошти, телефони й номери карток…",
+        (NothingToHide, En) => "No e-mails, phones or card numbers found.",
+        (NothingToHide, Ru) => "Почт, телефонов и номеров карт не найдено.",
+        (NothingToHide, Uk) => "Пошт, телефонів і номерів карток не знайдено.",
     }
 }
 
@@ -585,6 +606,11 @@ mod tests {
                 T::SearchFallback,
                 T::StartAtLogin,
                 T::ShortcutInvalid,
+                T::ReadQr,
+                T::NoQr,
+                T::HidePersonal,
+                T::Redacting,
+                T::NothingToHide,
             ] {
                 for c in tr(lang, key).chars() {
                     assert!(crate::font::has_glyph(c), "{c:?} in {key:?} ({lang:?})");
