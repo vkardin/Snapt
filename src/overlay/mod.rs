@@ -33,7 +33,7 @@ use winit::{
 
 use crate::capture::{Bounds, Shot};
 use crate::i18n::{T, t};
-use crate::settings::{self, ColorFormat, Feature, Shortcut, enabled as on};
+use crate::settings::{self, ColorFormat, Feature, Settings, Shortcut, enabled as on};
 use annotate::{Backdrop, Canvas, Kind, Shape};
 use render::Frame;
 use selection::{Handle, Hit, Point, Rect, Selection};
@@ -111,6 +111,10 @@ pub struct Overlay {
     /// Opened only to pick a color: no selection, the click copies and closes.
     pick_only: bool,
     format: ColorFormat,
+    /// A newly selected area is copied right away, without the editor.
+    copy_area: bool,
+    /// So is a window picked with a click.
+    copy_window: bool,
     /// Text for the clipboard, such as a picked color.
     copied: Option<String>,
     /// A selection waiting for text recognition.
@@ -170,14 +174,15 @@ struct Layer {
 impl Overlay {
     /// Opens one overlay window per monitor, each showing its shot, with
     /// `area` already selected when it is given and its monitor is still there.
-    /// With `pick_only` it is just the color picker, copying colors as `format`.
+    /// With `pick_only` it is just the color picker, copying colors in the
+    /// format `settings` ask for.
     pub fn open(
         event_loop: &ActiveEventLoop,
         shots: Vec<Shot>,
         style: Style,
         area: Option<Area>,
         pick_only: bool,
-        format: ColorFormat,
+        settings: &Settings,
     ) -> Result<Self> {
         let context = softbuffer::Context::new(event_loop.owned_display_handle())
             .map_err(|e| anyhow::anyhow!("failed to start the renderer: {e}"))?;
@@ -204,7 +209,9 @@ impl Overlay {
             palette: false,
             picking: pick_only,
             pick_only,
-            format,
+            format: settings.color_format,
+            copy_area: settings.copy_on_select,
+            copy_window: settings.copy_on_select && !settings.window_opens_editor,
             copied: None,
             recognize: None,
             status: None,
@@ -378,14 +385,24 @@ impl Overlay {
                         screen.canvas.push(shape);
                     }
                 } else {
+                    let creating = screen.selection.is_creating();
                     screen.selection.release(screen.cursor);
+                    let mut copy = self.copy_area;
                     // A click selects the window under it.
                     if screen.selection.rect().is_none()
                         && let Some(rect) = screen.window_at(screen.cursor)
                     {
                         screen.selection.set(rect);
+                        copy = self.copy_window;
                     }
                     screen.snap = None;
+                    // Copying right away skips the editor, so only a fresh
+                    // selection with nothing drawn yet goes straight out.
+                    if copy && creating && screen.canvas.is_empty() {
+                        if let Some(image) = screen.output() {
+                            return Some(Outcome::Copy(image));
+                        }
+                    }
                 }
                 screen.update_cursor_icon(&style);
                 screen.request_redraw();

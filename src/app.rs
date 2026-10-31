@@ -338,9 +338,9 @@ impl App {
         if !platform::screen_access() {
             return;
         }
-        let format = self.settings.color_format;
+        let settings = &self.settings;
         let result = capture::all_monitors()
-            .and_then(|shots| Overlay::open(event_loop, shots, self.style, area, pick, format));
+            .and_then(|shots| Overlay::open(event_loop, shots, self.style, area, pick, settings));
         match result {
             Ok(overlay) => self.overlay = Some(overlay),
             Err(err) => log::error!("screenshot failed: {err:#}"),
@@ -766,6 +766,10 @@ impl App {
             Action::OpenFolder => self.open_folder(),
             Action::Format(format) => self.settings.format = format,
             Action::CopyAs(copy_as) => self.settings.copy_as = copy_as,
+            Action::CopyOnSelect => self.settings.copy_on_select = !self.settings.copy_on_select,
+            Action::WindowOpensEditor => {
+                self.settings.window_opens_editor = !self.settings.window_opens_editor;
+            }
             Action::QuickSave => self.settings.quick_save = !self.settings.quick_save,
             Action::SaveOnCopy => self.settings.save_on_copy = !self.settings.save_on_copy,
             Action::OpenAfterSave => {

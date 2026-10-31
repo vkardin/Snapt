@@ -47,6 +47,8 @@ pub enum Action {
     OpenFolder,
     Format(Format),
     CopyAs(CopyAs),
+    CopyOnSelect,
+    WindowOpensEditor,
     QuickSave,
     SaveOnCopy,
     OpenAfterSave,
@@ -92,6 +94,8 @@ enum Id {
     OpenFolder,
     Format(Format),
     CopyAs(CopyAs),
+    CopyOnSelect,
+    WindowOpensEditor,
     QuickSave,
     SaveOnCopy,
     OpenAfterSave,
@@ -115,9 +119,9 @@ const WIDTH: f64 = 400.0;
 const HEIGHT: f64 = if platform::REPLACE_MODES {
     HEIGHT_WITH_MODES
 } else {
-    640.0
+    720.0
 };
-const HEIGHT_WITH_MODES: f64 = 680.0;
+const HEIGHT_WITH_MODES: f64 = 760.0;
 const MARGIN: f32 = 20.0;
 /// The height of one settings row, and of the controls in it.
 const ROW: f32 = 40.0;
@@ -320,6 +324,8 @@ impl SettingsWindow {
             Id::OpenFolder => Action::OpenFolder,
             Id::Format(f) => Action::Format(f),
             Id::CopyAs(c) => Action::CopyAs(c),
+            Id::CopyOnSelect => Action::CopyOnSelect,
+            Id::WindowOpensEditor => Action::WindowOpensEditor,
             Id::QuickSave => Action::QuickSave,
             Id::SaveOnCopy => Action::SaveOnCopy,
             Id::OpenAfterSave => Action::OpenAfterSave,
@@ -727,6 +733,14 @@ fn general(
         ui.segment(id, name, x, y + 6.0, seg_w, selected, i == 0, i == 1);
         x += seg_w;
     }
+    y += ROW;
+    let instant = settings.copy_on_select;
+    ui.switch(Id::CopyOnSelect, t(T::CopyOnSelect), y, instant);
+    y += ROW;
+    // Only matters while copying on select is on, but the row stays put so
+    // the page doesn't jump.
+    let editor = settings.window_opens_editor;
+    ui.switch(Id::WindowOpensEditor, t(T::WindowOpensEditor), y, editor);
     y += ROW;
     ui.switch(Id::QuickSave, t(T::QuickSave), y, settings.quick_save);
     y += ROW;

@@ -246,6 +246,11 @@ pub struct Settings {
     pub folder: PathBuf,
     pub format: Format,
     pub copy_as: CopyAs,
+    /// Copy a selected area as soon as the mouse is let go, without the editor.
+    pub copy_on_select: bool,
+    /// With `copy_on_select`, clicking a window still opens the editor
+    /// instead of copying the window right away.
+    pub window_opens_editor: bool,
     /// Save straight into `folder` instead of asking where.
     pub quick_save: bool,
     /// Copying a shot also saves it into `folder`.
@@ -288,6 +293,8 @@ impl Default for Settings {
             folder: default_folder(),
             format: Format::Png,
             copy_as: CopyAs::Image,
+            copy_on_select: false,
+            window_opens_editor: true,
             quick_save: false,
             save_on_copy: false,
             open_after_save: false,
@@ -414,6 +421,8 @@ impl Settings {
                         _ => CopyAs::Image,
                     }
                 }
+                "copy_on_select" => s.copy_on_select = value == "true",
+                "window_opens_editor" => s.window_opens_editor = value != "false",
                 "quick_save" => s.quick_save = value == "true",
                 "save_on_copy" => s.save_on_copy = value == "true",
                 "open_after_save" => s.open_after_save = value == "true",
@@ -470,6 +479,8 @@ impl Settings {
             CopyAs::File => "file",
         };
         let _ = writeln!(t, "copy_as = {copy_as}");
+        let _ = writeln!(t, "copy_on_select = {}", self.copy_on_select);
+        let _ = writeln!(t, "window_opens_editor = {}", self.window_opens_editor);
         let _ = writeln!(t, "quick_save = {}", self.quick_save);
         let _ = writeln!(t, "save_on_copy = {}", self.save_on_copy);
         let _ = writeln!(t, "open_after_save = {}", self.open_after_save);
@@ -632,6 +643,8 @@ mod tests {
             folder: PathBuf::from("/tmp/shots"),
             format: Format::Jpeg,
             copy_as: CopyAs::File,
+            copy_on_select: true,
+            window_opens_editor: false,
             quick_save: true,
             save_on_copy: true,
             open_after_save: true,
