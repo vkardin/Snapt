@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.9.0.schema.json
 PackageIdentifier: vkardin.Snapt
-PackageVersion: 2.2.0
+PackageVersion: 2.5.0
 InstallerType: exe
 InstallerSwitches:
   Silent: /S
@@ -10,10 +10,10 @@ InstallModes:
   - interactive
   - silent
 UpgradeBehavior: install
-ReleaseDate: 2026-10-27
+ReleaseDate: 2026-10-31
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/vkardin/snapt/releases/download/v2.2.0/snapt_2.2.0_x64-setup.exe
-    InstallerSha256: DF760683735077003ECB47EC5C31B90C3479A013A678163327B6A395B7A67D4E
+    InstallerUrl: https://github.com/vkardin/snapt/releases/download/v2.5.0/snapt_2.5.0_x64-setup.exe
+    InstallerSha256: 4D0AF6BCA3478718DF7DF57D5762595AA990F96C85C69C8501C58EEFD13FBA7E
 ManifestType: installer
 ManifestVersion: 1.9.0
