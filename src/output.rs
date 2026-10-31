@@ -44,6 +44,27 @@ impl Output {
             .context("failed to copy the screenshot")
     }
 
+    /// Puts `path` on the clipboard as a file, for pasting into a folder.
+    pub fn copy_file(&mut self, path: &Path) -> Result<()> {
+        let clipboard = self.clipboard.as_mut().context("clipboard unavailable")?;
+        clipboard
+            .set()
+            .file_list(&[path])
+            .context("failed to copy the file")
+    }
+
+    /// Saves `shot` into a temporary folder for copying as a file. The file
+    /// stays for a day, so it can still be pasted a while later.
+    pub fn save_for_copy(&mut self, shot: &RgbaImage, settings: &Settings) -> Result<PathBuf> {
+        let dir = std::env::temp_dir().join("snapt").join("copied");
+        fs::create_dir_all(&dir).context("failed to create a temporary folder")?;
+        remove_older_than(&dir, 24 * 60 * 60);
+        let name = file_name(Local::now(), &settings.file_name, settings.format);
+        let path = unique_path(&dir, &name);
+        save(shot, &path)?;
+        Ok(path)
+    }
+
     pub fn copy_text(&mut self, text: &str) -> Result<()> {
         let clipboard = self.clipboard.as_mut().context("clipboard unavailable")?;
         clipboard.set_text(text).context("failed to copy the text")
@@ -161,14 +182,15 @@ impl Output {
 fn open_page(name: &str, html: &str) -> Result<()> {
     let dir = std::env::temp_dir().join("snapt");
     fs::create_dir_all(&dir).context("failed to create a temporary folder")?;
-    remove_old_pages(&dir);
+    remove_older_than(&dir, 600);
     let path = dir.join(format!("{name}-{}.html", Local::now().format("%H%M%S%3f")));
     fs::write(&path, html).with_context(|| format!("failed to write {}", path.display()))?;
     open::that_detached(&path).context("failed to open the browser")
 }
 
-/// Pages hold screenshots, so they are removed once the browser surely has them loaded.
-fn remove_old_pages(dir: &Path) {
+/// Removes the files in `dir` older than `secs`. Pages hold screenshots, so they
+/// go once the browser surely has them loaded; copied files once surely pasted.
+fn remove_older_than(dir: &Path, secs: u64) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
@@ -176,8 +198,8 @@ fn remove_old_pages(dir: &Path) {
         let old = entry
             .metadata()
             .and_then(|m| m.modified())
-            .is_ok_and(|t| t.elapsed().is_ok_and(|age| age.as_secs() > 600));
-        if old {
+            .is_ok_and(|t| t.elapsed().is_ok_and(|age| age.as_secs() > secs));
+        if old && entry.file_type().is_ok_and(|t| t.is_file()) {
             let _ = fs::remove_file(entry.path());
         }
     }

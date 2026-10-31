@@ -19,7 +19,7 @@ use crate::{
     pin::{Pin, PinAction},
     platform,
     scroll::{Finished, Scroll, ScrollAction},
-    settings::{self, Feature, Settings, Shortcut},
+    settings::{self, CopyAs, Feature, Settings, Shortcut},
     settings_window::{Action, Notice, SettingsWindow, UpdateStatus},
     tray::{Command, Tray},
     updater::{self, Update},
@@ -338,12 +338,28 @@ impl App {
     }
 
     fn copy(&mut self, shot: &image::RgbaImage) -> Result<()> {
-        self.output.copy(shot)?;
-        log::info!("copied {}×{} to the clipboard", shot.width(), shot.height());
-        if self.settings.save_on_copy {
-            // Straight into the folder: a dialog on every copy would defeat the point.
-            let path = self.output.save_to_folder(shot, &self.settings)?;
-            log::info!("saved {}", path.display());
+        match self.settings.copy_as {
+            CopyAs::Image => {
+                self.output.copy(shot)?;
+                log::info!("copied {}×{} to the clipboard", shot.width(), shot.height());
+                if self.settings.save_on_copy {
+                    // Straight into the folder: a dialog on every copy would defeat the point.
+                    let path = self.output.save_to_folder(shot, &self.settings)?;
+                    log::info!("saved {}", path.display());
+                }
+            }
+            CopyAs::File => {
+                // The file pasted is the saved one when there is one, else a temporary copy.
+                let path = if self.settings.save_on_copy {
+                    let path = self.output.save_to_folder(shot, &self.settings)?;
+                    log::info!("saved {}", path.display());
+                    path
+                } else {
+                    self.output.save_for_copy(shot, &self.settings)?
+                };
+                self.output.copy_file(&path)?;
+                log::info!("copied {} to the clipboard", path.display());
+            }
         }
         Ok(())
     }
@@ -638,6 +654,7 @@ impl App {
             }
             Action::OpenFolder => self.open_folder(),
             Action::Format(format) => self.settings.format = format,
+            Action::CopyAs(copy_as) => self.settings.copy_as = copy_as,
             Action::QuickSave => self.settings.quick_save = !self.settings.quick_save,
             Action::SaveOnCopy => self.settings.save_on_copy = !self.settings.save_on_copy,
             Action::OpenAfterSave => {

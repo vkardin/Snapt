@@ -23,7 +23,7 @@ use crate::{
     icon,
     paint::{fill_round, rgb},
     platform,
-    settings::{ColorFormat, Feature, Format, Settings, Shortcut},
+    settings::{ColorFormat, CopyAs, Feature, Format, Settings, Shortcut},
     tray::hotkey_label,
 };
 
@@ -42,6 +42,7 @@ pub enum Action {
     ChangeFolder,
     OpenFolder,
     Format(Format),
+    CopyAs(CopyAs),
     QuickSave,
     SaveOnCopy,
     OpenAfterSave,
@@ -84,6 +85,7 @@ enum Id {
     ChangeFolder,
     OpenFolder,
     Format(Format),
+    CopyAs(CopyAs),
     QuickSave,
     SaveOnCopy,
     OpenAfterSave,
@@ -103,7 +105,7 @@ pub enum Notice {
 }
 
 const WIDTH: f64 = 400.0;
-const HEIGHT: f64 = 600.0;
+const HEIGHT: f64 = 640.0;
 const MARGIN: f32 = 20.0;
 /// The height of one settings row, and of the controls in it.
 const ROW: f32 = 40.0;
@@ -303,6 +305,7 @@ impl SettingsWindow {
             Id::ChangeFolder => Action::ChangeFolder,
             Id::OpenFolder => Action::OpenFolder,
             Id::Format(f) => Action::Format(f),
+            Id::CopyAs(c) => Action::CopyAs(c),
             Id::QuickSave => Action::QuickSave,
             Id::SaveOnCopy => Action::SaveOnCopy,
             Id::OpenAfterSave => Action::OpenAfterSave,
@@ -661,6 +664,23 @@ fn general(
             i == 0,
             i == 1,
         );
+        x += seg_w;
+    }
+    y += ROW;
+    ui.label(t(T::CopyAs), left, y + 12.0, 13.0, TEXT);
+    let choices = [
+        (t(T::CopyImage), CopyAs::Image),
+        (t(T::CopyFile), CopyAs::File),
+    ];
+    let seg_w = choices
+        .iter()
+        .map(|(name, _)| font::measure(name, 12.0).0 + 24.0)
+        .fold(60.0, f32::max);
+    let mut x = right - 2.0 * seg_w;
+    for (i, (name, copy_as)) in choices.iter().enumerate() {
+        let selected = settings.copy_as == *copy_as;
+        let id = Id::CopyAs(*copy_as);
+        ui.segment(id, name, x, y + 6.0, seg_w, selected, i == 0, i == 1);
         x += seg_w;
     }
     y += ROW;
