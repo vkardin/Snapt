@@ -300,6 +300,8 @@ pub struct Settings {
     pub save_on_copy: bool,
     /// Open a saved shot in the system's image viewer or editor.
     pub open_after_save: bool,
+    /// Draw the mouse pointer onto screenshots.
+    pub capture_cursor: bool,
     pub autostart: bool,
     /// Take over PrtSc (and on Windows Win+Shift+S) from the system's own screenshot tool.
     pub replace_system: ReplaceMode,
@@ -341,6 +343,7 @@ impl Default for Settings {
             quick_save: false,
             save_on_copy: false,
             open_after_save: false,
+            capture_cursor: false,
             autostart: false,
             // New Windows users are asked once whether Snapt should take over.
             replace_system: if cfg!(target_os = "windows") {
@@ -479,6 +482,7 @@ impl Settings {
                 "quick_save" => s.quick_save = value == "true",
                 "save_on_copy" => s.save_on_copy = value == "true",
                 "open_after_save" => s.open_after_save = value == "true",
+                "capture_cursor" => s.capture_cursor = value == "true",
                 "autostart" => s.autostart = value == "true",
                 "replace_system" => {
                     // Older versions wrote true or false.
@@ -543,6 +547,7 @@ impl Settings {
         let _ = writeln!(t, "quick_save = {}", self.quick_save);
         let _ = writeln!(t, "save_on_copy = {}", self.save_on_copy);
         let _ = writeln!(t, "open_after_save = {}", self.open_after_save);
+        let _ = writeln!(t, "capture_cursor = {}", self.capture_cursor);
         let _ = writeln!(t, "autostart = {}", self.autostart);
         let _ = writeln!(t, "replace_system = {}", self.replace_system.code());
         let _ = writeln!(t, "auto_update = {}", self.auto_update);
@@ -720,6 +725,7 @@ mod tests {
             quick_save: true,
             save_on_copy: true,
             open_after_save: true,
+            capture_cursor: true,
             autostart: true,
             replace_system: ReplaceMode::Ask,
             auto_update: false,

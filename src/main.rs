@@ -9,6 +9,7 @@
 mod app;
 mod capture;
 mod crash;
+mod cursor;
 mod font;
 mod history;
 mod i18n;
