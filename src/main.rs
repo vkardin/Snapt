@@ -9,6 +9,7 @@
 mod app;
 mod capture;
 mod crash;
+mod cursor;
 mod font;
 mod history;
 mod i18n;
@@ -22,7 +23,9 @@ mod pin;
 mod platform;
 #[cfg(target_os = "linux")]
 mod portal;
+mod qr;
 mod record;
+mod redact;
 mod scroll;
 mod settings;
 mod settings_window;

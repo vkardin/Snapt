@@ -57,6 +57,12 @@ impl History {
         history
     }
 
+    /// Keeps at most `limit` screenshots from now on; 0 turns the history off.
+    pub fn set_limit(&mut self, limit: usize) {
+        self.limit = limit;
+        self.prune();
+    }
+
     pub fn entries(&self) -> &[Entry] {
         &self.entries
     }

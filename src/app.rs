@@ -20,7 +20,7 @@ use crate::{
     platform,
     scroll::{Finished, Scroll, ScrollAction},
     settings::{self, CopyAs, Feature, ReplaceMode, Settings, Shortcut},
-    settings_window::{Action, Notice, SettingsWindow, UpdateStatus},
+    settings_window::{Action, FEATURES, Notice, Section, SettingsWindow, TOOLS, UpdateStatus},
     tray::{Command, Tray},
     updater::{self, Update},
 };
@@ -38,6 +38,8 @@ pub enum UserEvent {
     UpdateDownloaded(Result<std::path::PathBuf, String>),
     /// Text recognition on a selection finished.
     Recognized(Result<String, ocr::Error>),
+    /// The search for personal data in a selection finished.
+    Redacted(Result<Vec<crate::redact::Area>, ocr::Error>),
     /// The scrolling screenshot grew.
     ScrollGrew,
     /// A system screenshot key was caught while Snapt replaces the system tool.
@@ -347,7 +349,8 @@ impl App {
             return;
         }
         let settings = &self.settings;
-        let result = capture::all_monitors()
+        // The picker reads the pixels under the pointer, so it never gets a drawn one.
+        let result = capture::all_monitors(settings.capture_cursor && !pick)
             .and_then(|shots| Overlay::open(event_loop, shots, self.style, area, pick, settings));
         match result {
             Ok(overlay) => self.overlay = Some(overlay),
@@ -444,6 +447,27 @@ impl App {
         }
     }
 
+    /// Blurs the personal data found in the selection, or says why there is none.
+    fn redacted(&mut self, result: Result<Vec<crate::redact::Area>, ocr::Error>) {
+        let Some(overlay) = &mut self.overlay else {
+            return;
+        };
+        let status = match result {
+            Ok(areas) => {
+                if overlay.redacted(&areas) > 0 {
+                    return;
+                }
+                t(T::NothingToHide)
+            }
+            Err(ocr::Error::Missing) => t(platform::ocr_missing_hint()),
+            Err(ocr::Error::Failed(err)) => {
+                log::error!("looking for personal data failed: {err}");
+                t(T::RecognizeFailed)
+            }
+        };
+        overlay.set_status(Some(status.to_string()));
+    }
+
     fn copy(&mut self, shot: &image::RgbaImage) -> Result<()> {
         match self.settings.copy_as {
             CopyAs::Image => {
@@ -502,7 +526,7 @@ impl App {
         if !platform::screen_access() {
             return;
         }
-        match capture::all_monitors() {
+        match capture::all_monitors(self.settings.capture_cursor) {
             Ok(shots) => {
                 let shot = capture::stitch(&shots);
                 if let Err(err) = self.copy(&shot) {
@@ -852,6 +876,7 @@ impl App {
             Action::WindowOpensEditor => {
                 self.settings.window_opens_editor = !self.settings.window_opens_editor;
             }
+            Action::CaptureCursor => self.settings.capture_cursor = !self.settings.capture_cursor,
             Action::QuickSave => self.settings.quick_save = !self.settings.quick_save,
             Action::SaveOnCopy => self.settings.save_on_copy = !self.settings.save_on_copy,
             Action::OpenAfterSave => {
@@ -865,11 +890,22 @@ impl App {
             }
             Action::CheckUpdates => self.check_updates(),
             Action::InstallUpdate => self.start_update(),
-            Action::Website => {
-                if let Err(err) = open::that_detached(env!("CARGO_PKG_HOMEPAGE")) {
-                    log::error!("failed to open the website: {err}");
+            Action::Link(url) => {
+                if let Err(err) = open::that_detached(url) {
+                    log::error!("failed to open {url}: {err}");
                 }
             }
+            Action::Theme(theme) => self.settings.theme = theme,
+            Action::FileName(name) => {
+                let name = name.trim();
+                self.settings.file_name = if name.is_empty() {
+                    settings::DEFAULT_FILE_NAME.into()
+                } else {
+                    name.into()
+                };
+            }
+            Action::History(limit) => self.set_history(limit),
+            Action::Reset(section) => notice = self.reset(section),
         }
         self.save_settings();
         if let Some(window) = &mut self.settings_window {
@@ -878,6 +914,74 @@ impl App {
             }
             window.request_redraw();
         }
+    }
+
+    fn set_history(&mut self, limit: usize) {
+        self.settings.history = limit;
+        self.history.set_limit(limit);
+        if let Some(tray) = &mut self.tray {
+            tray.set_history(self.history.entries());
+        }
+    }
+
+    /// Puts the settings of one section of the settings window back to the defaults.
+    fn reset(&mut self, section: Section) -> Option<Notice> {
+        let default = Settings::default();
+        let s = &mut self.settings;
+        let features = |list: &[Feature], s: &mut Settings| {
+            for feature in list {
+                if s.is_enabled(*feature) == default.disabled.contains(feature) {
+                    s.toggle(*feature);
+                }
+            }
+        };
+        match section {
+            Section::General => {
+                s.theme = default.theme;
+                if s.autostart {
+                    self.apply(Action::Autostart);
+                }
+                if self.settings.language.is_some() {
+                    self.apply(Action::Language(None));
+                }
+            }
+            Section::Capture => {
+                s.copy_on_select = default.copy_on_select;
+                s.window_opens_editor = default.window_opens_editor;
+                s.color_format = default.color_format;
+                s.capture_cursor = default.capture_cursor;
+            }
+            Section::Saving => {
+                s.folder = default.folder;
+                s.format = default.format;
+                s.file_name = default.file_name;
+                s.quick_save = default.quick_save;
+                s.save_on_copy = default.save_on_copy;
+                s.open_after_save = default.open_after_save;
+                s.copy_as = default.copy_as;
+                self.set_history(default.history);
+            }
+            Section::Shortcuts => {
+                // One at a time, so a key two shortcuts swapped is free when its turn comes.
+                for which in Shortcut::ALL {
+                    *self.settings.shortcut_mut(which) = String::new();
+                }
+                self.register_hotkeys();
+                let mut notice = None;
+                for which in Shortcut::ALL {
+                    notice = notice.or(self.set_hotkey(which, which.default_keys().into()));
+                }
+                return notice;
+            }
+            Section::Features => {
+                features(&FEATURES, s);
+                self.register_hotkey(Shortcut::Pick);
+                self.rebuild_tray();
+            }
+            Section::Editor => features(&TOOLS, s),
+            Section::System | Section::About => {}
+        }
+        None
     }
 
     /// Switches `which` to `hotkey`, keeping the old one when the new one can't
@@ -968,6 +1072,7 @@ impl ApplicationHandler<UserEvent> for App {
             #[cfg(target_os = "linux")]
             UserEvent::PortalShortcut(hotkey, result) => self.portal_answered(hotkey, result),
             UserEvent::Recognized(result) => self.recognized(event_loop, result),
+            UserEvent::Redacted(result) => self.redacted(result),
             UserEvent::ScrollGrew => {
                 if let Some(scroll) = &self.scroll {
                     scroll.request_redraw();
@@ -1041,7 +1146,7 @@ impl ApplicationHandler<UserEvent> for App {
         if let Some(window) = &mut self.settings_window
             && window.id() == id
         {
-            if let Some(action) = window.window_event(event, &self.settings, &self.update_status) {
+            for action in window.window_event(event, &self.settings, &self.update_status) {
                 self.apply(action);
             }
             return;
@@ -1079,6 +1184,13 @@ impl ApplicationHandler<UserEvent> for App {
             let proxy = self.proxy.clone();
             std::thread::spawn(move || {
                 let _ = proxy.send_event(UserEvent::Recognized(ocr::recognize(&image)));
+            });
+        }
+        if let Some(image) = overlay.take_redact() {
+            let proxy = self.proxy.clone();
+            std::thread::spawn(move || {
+                let areas = ocr::words(&image).map(|words| crate::redact::find(&words));
+                let _ = proxy.send_event(UserEvent::Redacted(areas));
             });
         }
         if let Some(text) = overlay.take_copied() {
