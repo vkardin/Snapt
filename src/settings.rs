@@ -154,6 +154,12 @@ impl Feature {
         }
     }
 
+    /// Tools most people don't need start turned off; the settings file
+    /// lists them under `enabled` once turned on.
+    fn off_by_default(self) -> bool {
+        matches!(self, Feature::Crop)
+    }
+
     fn bit(self) -> u32 {
         1 << self as u32
     }
@@ -348,7 +354,10 @@ impl Default for Settings {
             stroke: 3.0,
             text_size: 20.0,
             history: crate::history::DEFAULT_LIMIT,
-            disabled: Vec::new(),
+            disabled: Feature::ALL
+                .into_iter()
+                .filter(|f| f.off_by_default())
+                .collect(),
             file_name: DEFAULT_FILE_NAME.into(),
         }
     }
@@ -423,6 +432,13 @@ impl Settings {
 
     fn parse(text: &str) -> Self {
         let mut s = Self::default();
+        let (mut off, mut on) = (Vec::new(), Vec::new());
+        let codes = |value: &str| -> Vec<Feature> {
+            Feature::ALL
+                .into_iter()
+                .filter(|f| value.split(',').any(|v| v.trim() == f.code()))
+                .collect()
+        };
         for line in text.lines() {
             let line = line.trim();
             if line.starts_with('#') {
@@ -483,15 +499,21 @@ impl Settings {
                 "text_size" => s.text_size = value.parse().unwrap_or(s.text_size).clamp(10.0, 96.0),
                 "history" => s.history = value.parse().unwrap_or(s.history).min(50),
                 "file_name" if !value.is_empty() => s.file_name = value.into(),
-                "disabled" => {
-                    s.disabled = Feature::ALL
-                        .into_iter()
-                        .filter(|f| value.split(',').any(|v| v.trim() == f.code()))
-                        .collect()
-                }
+                "disabled" => off = codes(value),
+                "enabled" => on = codes(value),
                 _ => {}
             }
         }
+        s.disabled = Feature::ALL
+            .into_iter()
+            .filter(|f| {
+                if f.off_by_default() {
+                    !on.contains(f)
+                } else {
+                    off.contains(f)
+                }
+            })
+            .collect();
         s
     }
 
@@ -536,12 +558,25 @@ impl Settings {
             "# saved file names: %Y year, %m month, %d day, %H hour, %M minute, %S second"
         );
         let _ = writeln!(t, "file_name = {}", self.file_name);
-        let disabled: Vec<&str> = self.disabled.iter().map(|f| f.code()).collect();
+        let disabled: Vec<&str> = (self.disabled.iter())
+            .filter(|f| !f.off_by_default())
+            .map(|f| f.code())
+            .collect();
+        let enabled: Vec<&str> = (Feature::ALL.into_iter())
+            .filter(|f| f.off_by_default() && self.is_enabled(*f))
+            .map(Feature::code)
+            .collect();
         let _ = writeln!(
             t,
-            "# turned off: ocr, search, print, pin, scroll, record, picker"
+            "# turned off: ocr, search, print, pin, scroll, record, picker, pen, line, arrow,"
+        );
+        let _ = writeln!(
+            t,
+            "# rect, ellipse, marker, text, number, pixelate, blur, spotlight"
         );
         let _ = writeln!(t, "disabled = {}", disabled.join(", "));
+        let _ = writeln!(t, "# turned on, though off at first: crop");
+        let _ = writeln!(t, "enabled = {}", enabled.join(", "));
         t
     }
 }
@@ -697,6 +732,17 @@ mod tests {
             disabled: vec![Feature::Pin, Feature::Picker, Feature::Blur, Feature::Crop],
         };
         assert_eq!(Settings::parse(&s.to_text()), s);
+    }
+
+    #[test]
+    fn crop_starts_off_and_can_be_turned_on() {
+        assert!(!Settings::default().is_enabled(Feature::Crop));
+        // Files from before crop had a switch keep it off too.
+        let old = Settings::parse("disabled = pin");
+        assert!(!old.is_enabled(Feature::Crop) && !old.is_enabled(Feature::Pin));
+        let on = Settings::parse("enabled = crop\ndisabled = ");
+        assert!(on.is_enabled(Feature::Crop));
+        assert_eq!(Settings::parse(&on.to_text()), on);
     }
 
     #[test]
