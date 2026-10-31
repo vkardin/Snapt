@@ -771,6 +771,7 @@ impl App {
             Action::WindowOpensEditor => {
                 self.settings.window_opens_editor = !self.settings.window_opens_editor;
             }
+            Action::CaptureCursor => self.settings.capture_cursor = !self.settings.capture_cursor,
             Action::QuickSave => self.settings.quick_save = !self.settings.quick_save,
             Action::SaveOnCopy => self.settings.save_on_copy = !self.settings.save_on_copy,
             Action::OpenAfterSave => {
@@ -846,6 +847,7 @@ impl App {
                 s.copy_on_select = default.copy_on_select;
                 s.window_opens_editor = default.window_opens_editor;
                 s.color_format = default.color_format;
+                s.capture_cursor = default.capture_cursor;
             }
             Section::Saving => {
                 s.folder = default.folder;

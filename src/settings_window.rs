@@ -59,6 +59,7 @@ pub enum Action {
     CopyAs(CopyAs),
     CopyOnSelect,
     WindowOpensEditor,
+    CaptureCursor,
     QuickSave,
     SaveOnCopy,
     OpenAfterSave,
@@ -195,6 +196,7 @@ enum Id {
     CopyAs(CopyAs),
     CopyOnSelect,
     WindowOpensEditor,
+    CaptureCursor,
     QuickSave,
     SaveOnCopy,
     OpenAfterSave,
@@ -583,6 +585,7 @@ impl SettingsWindow {
             Id::CopyAs(c) => Action::CopyAs(c),
             Id::CopyOnSelect => Action::CopyOnSelect,
             Id::WindowOpensEditor => Action::WindowOpensEditor,
+            Id::CaptureCursor => Action::CaptureCursor,
             Id::QuickSave => Action::QuickSave,
             Id::SaveOnCopy => Action::SaveOnCopy,
             Id::OpenAfterSave => Action::OpenAfterSave,
@@ -1137,6 +1140,9 @@ fn capture(page: &mut Page, settings: &Settings) {
         editor,
         on,
     );
+    let hint = Some(t(T::HintCaptureCursor));
+    let pointer = settings.capture_cursor;
+    page.switch(Id::CaptureCursor, t(T::CaptureCursor), hint, pointer, true);
     page.choice(
         t(T::ColorFormat),
         Some(t(T::HintColorFormat)),
