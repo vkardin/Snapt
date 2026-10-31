@@ -23,6 +23,8 @@ pub const DELAYS: [u64; 3] = [3, 5, 10];
 pub enum Command {
     Capture,
     PickColor,
+    /// Open the overlay for a scrolling screenshot of a page.
+    ScrollPage,
     /// Copy every screen at once, without the overlay.
     FullScreen,
     /// Open the overlay with the last selected area already selected.
@@ -66,6 +68,7 @@ pub struct Tray {
     icon: TrayIcon,
     capture: IconMenuItem,
     pick: IconMenuItem,
+    scroll_page: IconMenuItem,
     full_screen: IconMenuItem,
     repeat: IconMenuItem,
     history: Submenu,
@@ -81,6 +84,11 @@ impl Tray {
             Glyph::Picker,
             t(T::PickColor),
             settings.is_enabled(Feature::Picker),
+        );
+        let scroll_page = item(
+            Glyph::ScrollPage,
+            t(T::ScrollPage),
+            settings.is_enabled(Feature::Scroll),
         );
         let full_screen = item(Glyph::FullScreen, t(T::FullScreen), true);
         let repeat = item(Glyph::Repeat, t(T::RepeatArea), false);
@@ -124,6 +132,7 @@ impl Tray {
         menu.append_items(&[
             &capture,
             &pick,
+            &scroll_page,
             &full_screen,
             &repeat,
             &delayed,
@@ -142,6 +151,7 @@ impl Tray {
         commands.extend([
             (capture.id().clone(), Command::Capture),
             (pick.id().clone(), Command::PickColor),
+            (scroll_page.id().clone(), Command::ScrollPage),
             (full_screen.id().clone(), Command::FullScreen),
             (repeat.id().clone(), Command::RepeatArea),
             (open_folder.id().clone(), Command::OpenFolder),
@@ -171,6 +181,7 @@ impl Tray {
             icon: tray,
             capture,
             pick,
+            scroll_page,
             full_screen,
             repeat,
             history,
@@ -243,6 +254,7 @@ impl Tray {
         for (item, text, which) in [
             (&self.capture, T::TakeScreenshot, Shortcut::Capture),
             (&self.pick, T::PickColor, Shortcut::Pick),
+            (&self.scroll_page, T::ScrollPage, Shortcut::ScrollPage),
             (&self.full_screen, T::FullScreen, Shortcut::FullScreen),
             (&self.repeat, T::RepeatArea, Shortcut::RepeatArea),
         ] {
@@ -253,6 +265,8 @@ impl Tray {
                 item.set_text(format!("{}\t{}", t(text), hotkey_label(keys)));
             }
         }
+        self.scroll_page
+            .set_enabled(settings.is_enabled(Feature::Scroll));
     }
 }
 

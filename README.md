@@ -42,7 +42,8 @@ No accounts, no cloud, a few megabytes on disk.
   Ukrainian and more).
 - Copy it, save it as PNG or JPEG, print it, or search Google Lens for similar images.
 - Pin it on top of all windows to keep it in sight while you work, as in Snipaste.
-- Scrolling screenshots (experimental): scroll a long page and Snapt glues it into one image.
+- Scrolling screenshots of whole pages: Snapt scrolls the page by itself and glues it into one
+  tall image, or you scroll by hand.
 - Record an area as a GIF, or as an MP4 when [ffmpeg](https://ffmpeg.org) is installed.
 - From the tray: copy the full screen in one click, take a screenshot after 3, 5 or 10
   seconds, select the last area again, and reopen your recent screenshots, or pin the
@@ -75,6 +76,8 @@ first launch attempt and click **Open Anyway**.
 ## Usage
 
 Press **PrtSc** (**Cmd+Shift+9** on macOS) or pick **Take screenshot** in the tray menu.
+For a whole long page, press **Ctrl+Shift+PrtSc** (**Cmd+Shift+0** on macOS) and click the
+browser window; see [scrolling screenshots](#scrolling-screenshots) below.
 The screen freezes, then:
 
 | Action | How |
@@ -98,7 +101,7 @@ The screen freezes, then:
 | Search for similar images | `Ctrl+F` |
 | Copy the text in it | `Ctrl+Shift+C` |
 | Pin it on top of all windows | `F3` |
-| Scrolling screenshot (experimental) | `Ctrl+Shift+S`, then scroll the page down |
+| Scrolling screenshot of the selection | `Ctrl+Shift+S`; Snapt scrolls the page itself |
 | Record a video of the area | `Ctrl+Shift+R`; `Enter` stops, `Esc` cancels |
 | Pick a color from the screen | `I`, then click; the HEX code is copied too |
 | Cancel | `Esc` or right-click |
@@ -110,11 +113,24 @@ A pinned screenshot stays on top of other windows. Drag it to move it, zoom it w
 wheel or `+` and `-` (`0` goes back to 100 %), copy it again with `Ctrl+C`, save it with
 `Ctrl+S`, and close it with `Esc`, a double click or the middle mouse button.
 
-For a scrolling screenshot, select the visible part of the page and press `Ctrl+Shift+S` or
-the scroll button, then scroll down at an even pace. A panel shows the height so far; press
-`Enter` or click it when done (`Esc` cancels). The result is copied and pinned so you can
-check it and save it with `Ctrl+S`. It is experimental: sticky headers and animations can
-confuse the gluing.
+### Scrolling screenshots
+
+For a scrolling screenshot of a whole page, press `Ctrl+Shift+PrtSc` (`Cmd+Shift+0` on macOS)
+or pick **Scrolling screenshot of a page** in the tray menu, then click the browser window or
+select the part of the page to capture. In an open screenshot, `Ctrl+Shift+S` or the scroll
+button does the same for the selection (or the window under the mouse). Snapt goes to the top
+of the page, scrolls it down by itself and stops at the end; a panel next to the area shows the
+height so far, `Enter` or a click on it finishes early, and `Esc` cancels. The result is copied
+and pinned so you can check it and save it with `Ctrl+S`.
+
+Move the mouse to take over and scroll by hand; if the panel says you went too fast, scroll back
+up a little. Where Snapt can't turn the wheel itself (on Wayland, or on macOS until Snapt is
+allowed under *System Settings > Privacy & Security > Accessibility*), it asks you to scroll by
+hand. Sticky headers and footers appear once, but floating buttons and the scroll bar repeat
+down the image, so select the page without them for the cleanest result; pages that change as
+they scroll (animations, infinite feeds) may not glue.
+
+### Video and the tray menu
 
 To record a video, select an area and press `Ctrl+Shift+R` or the camera button. Snapt records
 10 frames a second, for up to two minutes; the panel shows the time. Press `Enter` or click
@@ -127,6 +143,7 @@ there the menu bar or the desktop draws tray menus itself.
 
 The tray menu also has:
 
+- **Scrolling screenshot of a page**: the same as `Ctrl+Shift+PrtSc` above;
 - **Copy full screen**: all monitors at once, straight to the clipboard;
 - **Repeat last area**: opens the screenshot with the area you selected last time;
 - **Screenshot with delay**: in 3, 5 or 10 seconds, to catch menus and tooltips;
@@ -141,7 +158,8 @@ Pick **Settings…** in the tray menu. There you can:
 
 - switch the language: English, Russian or Ukrainian (it follows the system by default);
 - on **Shortcuts**, give every action its own keys: capture, color picker, full screen,
-  repeat last area, and copy text, scrolling screenshot, recording, pin, copy and save on the open
+  repeat last area, scrolling screenshot of a page, and copy text, scrolling screenshot,
+  recording, pin, copy and save on the open
   screenshot. Click a field and press the keys; Backspace clears it. Snapt tells you when
   the keys are already taken;
 - on **Features**, turn off text recognition, scrolling screenshots, pinning, image search,

@@ -3531,6 +3531,7 @@ dependencies = [
  "windows",
  "winit",
  "winresource",
+ "x11rb",
  "xcap",
  "xcb",
  "zbus",

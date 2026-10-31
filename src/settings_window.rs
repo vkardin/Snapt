@@ -1356,6 +1356,7 @@ fn shortcut_label(which: Shortcut) -> &'static str {
         Shortcut::FullScreen => T::FullScreen,
         Shortcut::RepeatArea => T::RepeatArea,
         Shortcut::PinLast => T::PinLast,
+        Shortcut::ScrollPage => T::ScrollPage,
         Shortcut::Recognize => T::Recognize,
         Shortcut::Scroll => T::Scroll,
         Shortcut::Record => T::Record,

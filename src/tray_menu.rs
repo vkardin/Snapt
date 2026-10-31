@@ -30,6 +30,7 @@ use crate::{
 pub enum Glyph {
     Capture,
     Picker,
+    ScrollPage,
     FullScreen,
     Repeat,
     Timer,
@@ -173,10 +174,12 @@ pub struct Model {
     /// The running version, shown at the top.
     pub version: &'static str,
     pub update: UpdateStatus,
-    /// The shortcuts of taking a screenshot, the picker, the full screen and
-    /// the last area, as shown; empty when not set.
-    pub keys: [String; 4],
+    /// The shortcuts of taking a screenshot, the picker, the full screen,
+    /// the last area and a scrolling screenshot of a page, as shown; empty when not set.
+    pub keys: [String; 5],
     pub picker: bool,
+    /// Scrolling screenshots are on.
+    pub scroll_page: bool,
     pub can_repeat: bool,
     /// The recent screenshots, newest first.
     pub history: Vec<String>,
@@ -284,6 +287,14 @@ fn rows(model: &Model, page: Page, scroll: usize) -> Vec<Row> {
                     t(T::PickColor),
                     keys(&model.keys[1]),
                     model.picker.then_some(Target::Run(Command::PickColor)),
+                ),
+                item(
+                    Glyph::ScrollPage,
+                    t(T::ScrollPage),
+                    keys(&model.keys[4]),
+                    model
+                        .scroll_page
+                        .then_some(Target::Run(Command::ScrollPage)),
                 ),
                 item(
                     Glyph::FullScreen,
@@ -714,6 +725,19 @@ fn draw_glyph(pixmap: &mut Pixmap, glyph: Glyph, color: u32, t: Transform) {
             p.line_to(8.0, 13.5);
             p.move_to(5.0, 13.5);
             p.line_to(11.0, 13.5);
+        }
+        Glyph::ScrollPage => {
+            // A page with an arrow down it.
+            p.move_to(3.5, 2.5);
+            p.line_to(12.5, 2.5);
+            p.line_to(12.5, 13.5);
+            p.line_to(3.5, 13.5);
+            p.close();
+            p.move_to(8.0, 5.0);
+            p.line_to(8.0, 11.0);
+            p.move_to(5.5, 8.5);
+            p.line_to(8.0, 11.0);
+            p.line_to(10.5, 8.5);
         }
         Glyph::Repeat => {
             p.move_to(2.5, 8.0);
@@ -1233,8 +1257,10 @@ mod tests {
                 "Ctrl+Alt+C".into(),
                 String::new(),
                 String::new(),
+                "Ctrl+Shift+PrtSc".into(),
             ],
             picker: true,
+            scroll_page: true,
             can_repeat: false,
             history: vec![
                 "09:05:02  ·  800 × 600".into(),
@@ -1261,6 +1287,7 @@ mod tests {
         for command in [
             Command::Capture,
             Command::PickColor,
+            Command::ScrollPage,
             Command::FullScreen,
             Command::Delay(3),
             Command::Delay(10),
