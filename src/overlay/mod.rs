@@ -147,6 +147,12 @@ struct Screen {
     windows: Vec<Bounds>,
     /// The window under the cursor, outlined until a selection is made.
     snap: Option<Rect>,
+    /// The crop tool is on: a rectangle drawn inside the selection becomes the selection.
+    cropping: bool,
+    /// Where the mouse went down drawing the crop rectangle.
+    crop_from: Option<Point>,
+    /// The size being typed for the selection, in image pixels, such as `800x6`.
+    size_entry: Option<String>,
     /// What the last frame drew over the dimmed screen, bright part included,
     /// or `None` when the next frame has to be drawn whole.
     drawn: Option<Rect>,
@@ -310,6 +316,8 @@ impl Overlay {
             screen.canvas.translate(i, dx as f32, dy as f32);
             screen.moving = Some((screen.cursor, true));
             screen.request_redraw();
+        } else if screen.crop_from.is_some() {
+            screen.request_redraw();
         } else if screen.drawing {
             if let Some(shape) = &mut screen.live {
                 shape.drag_to(screen.cursor.into(), straight);
@@ -354,7 +362,15 @@ impl Overlay {
                 let style = self.style;
                 let straight = self.modifiers.shift_key();
                 let screen = &mut self.screens[index];
-                if screen.moving.take().is_some() {
+                if let Some(from) = screen.crop_from.take() {
+                    if let Some(rect) = screen.crop_rect(from)
+                        && rect.w >= 4
+                        && rect.h >= 4
+                    {
+                        screen.selection.set(rect);
+                        screen.cropping = false;
+                    }
+                } else if screen.moving.take().is_some() {
                 } else if screen.drawing {
                     screen.drawing = false;
                     if let Some(mut shape) = screen.live.take() {
@@ -424,6 +440,11 @@ impl Overlay {
         let hit = screen.selection.hit(screen.cursor, screen.grip());
         screen.commit_text();
         screen.selected = None;
+        screen.size_entry = None;
+        if screen.cropping && hit != Hit::Outside {
+            screen.crop_from = Some(screen.cursor);
+            return None;
+        }
         match (hit, style.tool) {
             (Hit::Handle(_), _) => screen.selection.press(screen.cursor, screen.grip()),
             (Hit::Inside, Some(tool)) => {
@@ -485,7 +506,14 @@ impl Overlay {
             }
             Target::Button(Button::Tool(tool)) => {
                 screen.commit_text();
+                screen.cropping = false;
                 self.style.tool = (self.style.tool != Some(tool)).then_some(tool);
+                self.palette = false;
+            }
+            Target::Button(Button::Crop) => {
+                screen.commit_text();
+                screen.cropping = !screen.cropping;
+                self.style.tool = None;
                 self.palette = false;
             }
             Target::Button(Button::Color) => self.palette = !self.palette,
@@ -564,6 +592,11 @@ impl Overlay {
         let PhysicalKey::Code(code) = event.physical_key else {
             return None;
         };
+        if screen.size_entry.is_some() && !command {
+            screen.type_size(code);
+            screen.request_redraw();
+            return None;
+        }
         let has_selection = screen.selection.rect().is_some();
         let pressed = hotkey_code(code)
             .and_then(|code| settings::overlay_shortcut(hotkey_modifiers(self.modifiers), code));
@@ -578,6 +611,7 @@ impl Overlay {
             KeyCode::KeyU => Some(Tool::Blur),
             KeyCode::KeyM => Some(Tool::Marker),
             KeyCode::KeyT => Some(Tool::Text),
+            KeyCode::KeyH => Some(Tool::Spotlight),
             _ => None,
         };
         match code {
@@ -597,6 +631,13 @@ impl Overlay {
                 self.picking = !self.picking;
                 self.palette = false;
                 self.request_redraw_all();
+                None
+            }
+            KeyCode::Escape if screen.cropping => {
+                screen.cropping = false;
+                screen.crop_from = None;
+                screen.update_cursor_icon(&style);
+                screen.request_redraw();
                 None
             }
             KeyCode::Escape if self.palette => {
@@ -654,7 +695,35 @@ impl Overlay {
                 screen.request_redraw();
                 None
             }
+            KeyCode::KeyC if !command && has_selection => {
+                screen.commit_text();
+                screen.cropping = !screen.cropping;
+                self.style.tool = None;
+                self.palette = false;
+                screen.update_cursor_icon(&self.style);
+                self.request_redraw_all();
+                None
+            }
+            _ if !command && has_selection && digit(code).is_some() => {
+                screen.size_entry = digit(code).map(String::from);
+                screen.request_redraw();
+                None
+            }
+            KeyCode::ArrowLeft | KeyCode::ArrowRight | KeyCode::ArrowUp | KeyCode::ArrowDown
+                if !command && has_selection =>
+            {
+                let step = if self.modifiers.shift_key() { 10 } else { 1 };
+                let (dx, dy) = match code {
+                    KeyCode::ArrowLeft => (-step, 0),
+                    KeyCode::ArrowRight => (step, 0),
+                    KeyCode::ArrowUp => (0, -step),
+                    _ => (0, step),
+                };
+                screen.nudge(dx, dy, self.modifiers.alt_key());
+                None
+            }
             _ if !command && has_selection && tool.is_some() => {
+                screen.cropping = false;
                 self.style.tool = (style.tool != tool).then_some(tool).flatten();
                 self.palette = false;
                 screen.update_cursor_icon(&self.style);
@@ -730,6 +799,9 @@ impl Screen {
             hover: None,
             windows,
             snap: None,
+            cropping: false,
+            crop_from: None,
+            size_entry: None,
             drawn: None,
             asked: Cell::new(false),
         };
@@ -804,6 +876,7 @@ impl Screen {
         if let Some(rect) = rect {
             self.update_layer(rect);
         }
+        let crop = self.crop_from.and_then(|from| self.crop_rect(from));
         let width = self.frame.width as i32;
         let mut buffer = match self.surface.buffer_mut() {
             Ok(buffer) => buffer,
@@ -850,6 +923,20 @@ impl Screen {
             if let Some(shape) = &self.live {
                 draw_live(&mut buffer, width, rect, shape, !self.drawing, scale);
             }
+            if let Some(crop) = crop {
+                // draw_dashed pads what it outlines; take that back off.
+                let pad = (4.0 * scale).round() as f32;
+                let outline = tiny_skia::Rect::from_ltrb(
+                    crop.x as f32 + pad,
+                    crop.y as f32 + pad,
+                    (crop.right() - 1) as f32 - pad,
+                    (crop.bottom() - 1) as f32 - pad,
+                )
+                .or_else(|| tiny_skia::Rect::from_xywh(crop.x as f32, crop.y as f32, 1.0, 1.0));
+                if let Some(outline) = outline {
+                    draw_dashed(&mut buffer, width, outline, rect, scale);
+                }
+            }
             let frame = render::draw_frame(&mut buffer, width, rect, &label, scale);
             drawn = render::union(drawn, Some(frame));
         }
@@ -860,6 +947,7 @@ impl Screen {
                 fill: style.fill,
                 hover: self.hover,
                 picking,
+                cropping: self.cropping,
             };
             drawn = render::union(drawn, bar.draw(&mut buffer, width, &look));
         }
@@ -931,6 +1019,9 @@ impl Screen {
 
     /// The size of the selection in image pixels, plus the stroke width while drawing.
     fn label(&self, rect: Rect, style: &Style) -> String {
+        if let Some(entry) = &self.size_entry {
+            return format!("{}_", entry.replace('x', " × "));
+        }
         let (_, _, w, h) = self.to_image(rect).unwrap_or_default();
         match style.tool {
             Some(Tool::Text) => format!("{w} × {h}  ·  {} px", style.text_size),
@@ -962,9 +1053,12 @@ impl Screen {
             y: rect.y,
             scale: self.image.width() as f32 / self.frame.width.max(1) as f32,
         };
-        for shape in self.canvas.shapes() {
-            shape.draw(&mut pixmap, transform, Some(&backdrop));
-        }
+        annotate::draw_all(
+            self.canvas.shapes(),
+            &mut pixmap,
+            transform,
+            Some(&backdrop),
+        );
         self.layer = Some(Layer {
             rect,
             version: self.canvas.version,
@@ -982,6 +1076,7 @@ impl Screen {
         }
         let icon = match (self.selection.hit(self.cursor, self.grip()), style.tool) {
             (Hit::Outside, _) => CursorIcon::Crosshair,
+            _ if self.cropping => CursorIcon::Crosshair,
             (Hit::Inside, Some(Tool::Text)) => CursorIcon::Text,
             (Hit::Inside, Some(_)) => CursorIcon::Crosshair,
             (Hit::Inside, None) => CursorIcon::Move,
@@ -1072,6 +1167,103 @@ impl Screen {
         self.commit_text();
         self.canvas.redo();
         self.request_redraw();
+    }
+
+    /// The crop rectangle from `from` to the cursor, cut to the selection.
+    fn crop_rect(&self, from: Point) -> Option<Rect> {
+        let sel = self.selection.rect()?;
+        let (to, from) = (self.cursor, from);
+        let left = from.x.min(to.x).max(sel.x);
+        let top = from.y.min(to.y).max(sel.y);
+        let right = from.x.max(to.x).min(sel.right());
+        let bottom = from.y.max(to.y).min(sel.bottom());
+        (right > left && bottom > top).then_some(Rect {
+            x: left,
+            y: top,
+            w: right - left,
+            h: bottom - top,
+        })
+    }
+
+    /// Moves the selection by `dx`, `dy` window pixels, or with `resize`
+    /// moves its right and bottom edges instead.
+    fn nudge(&mut self, dx: i32, dy: i32, resize: bool) {
+        let Some(rect) = self.selection.rect() else {
+            return;
+        };
+        let (w, h) = (self.frame.width as i32, self.frame.height as i32);
+        let next = if resize {
+            Rect {
+                w: (rect.w + dx).max(1),
+                h: (rect.h + dy).max(1),
+                ..rect
+            }
+        } else {
+            Rect {
+                x: (rect.x + dx).clamp(0, (w - rect.w).max(0)),
+                y: (rect.y + dy).clamp(0, (h - rect.h).max(0)),
+                ..rect
+            }
+        };
+        self.selection.set(next);
+        self.request_redraw();
+    }
+
+    /// Takes a key while the selection's size is typed: digits, `x` between
+    /// width and height, Backspace, Enter to apply and Esc to give up.
+    fn type_size(&mut self, code: KeyCode) {
+        let Some(entry) = self.size_entry.as_mut() else {
+            return;
+        };
+        match code {
+            KeyCode::Enter | KeyCode::NumpadEnter => {
+                let entry = self.size_entry.take().unwrap_or_default();
+                self.apply_size(&entry);
+            }
+            KeyCode::Escape => self.size_entry = None,
+            KeyCode::Backspace => {
+                entry.pop();
+                if entry.is_empty() {
+                    self.size_entry = None;
+                }
+            }
+            KeyCode::KeyX | KeyCode::NumpadMultiply | KeyCode::Space | KeyCode::Tab => {
+                if !entry.contains('x') {
+                    entry.push('x');
+                }
+            }
+            _ => {
+                if let Some(d) = digit(code)
+                    && entry.len() < 11
+                {
+                    entry.push(d);
+                }
+            }
+        }
+    }
+
+    /// Resizes the selection to a typed `width x height` in image pixels,
+    /// keeping its top-left corner where it fits. A missing side stays as it is.
+    fn apply_size(&mut self, entry: &str) {
+        let Some(rect) = self.selection.rect() else {
+            return;
+        };
+        let Some((_, _, iw, ih)) = self.to_image(rect) else {
+            return;
+        };
+        let (w, h) = parse_size(entry, (iw, ih));
+        let (img_w, img_h) = self.image.dimensions();
+        let (fw, fh) = (self.frame.width as i32, self.frame.height as i32);
+        let to_window = |v: u32, image: u32, frame: i32| {
+            ((v as f64 * frame as f64 / image.max(1) as f64).round() as i32).clamp(1, frame)
+        };
+        let (w, h) = (to_window(w, img_w, fw), to_window(h, img_h, fh));
+        self.selection.set(Rect {
+            x: rect.x.min(fw - w).max(0),
+            y: rect.y.min(fh - h).max(0),
+            w,
+            h,
+        });
     }
 
     /// Converts a window rectangle into image pixels: (x, y, width, height).
@@ -1268,6 +1460,26 @@ fn draw_magnifier(
     render::blend_pixmap(buf, width, &pixmap, x, y)
 }
 
+/// The digit a key types, on the main row or the number pad.
+fn digit(code: KeyCode) -> Option<char> {
+    let name = format!("{code:?}");
+    let d = name
+        .strip_prefix("Digit")
+        .or_else(|| name.strip_prefix("Numpad"))?;
+    let mut chars = d.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c), None) if c.is_ascii_digit() => Some(c),
+        _ => None,
+    }
+}
+
+/// A typed `width x height`; a side left out or zero keeps its `current` value.
+fn parse_size(entry: &str, current: (u32, u32)) -> (u32, u32) {
+    let (w, h) = entry.split_once('x').unwrap_or((entry, ""));
+    let side = |s: &str, keep: u32| s.parse().ok().filter(|&v| v > 0).unwrap_or(keep);
+    (side(w, current.0), side(h, current.1))
+}
+
 /// The `global_hotkey` key for a winit key; both use the W3C key names.
 fn hotkey_code(code: KeyCode) -> Option<global_hotkey::hotkey::Code> {
     format!("{code:?}").parse().ok()
@@ -1310,6 +1522,13 @@ fn draw_dashed(buf: &mut [u32], width: i32, bounds: tiny_skia::Rect, clip: Rect,
 /// Draws the shape in progress, clipped to the selection. Text being typed gets a caret.
 fn draw_live(buf: &mut [u32], width: i32, rect: Rect, shape: &Shape, typing: bool, scale: f64) {
     let Some(bounds) = shape.bounds() else { return };
+    // A spotlight dims the whole selection around its rectangle.
+    let bounds = if shape.paints_everywhere() {
+        tiny_skia::Rect::from_xywh(rect.x as f32, rect.y as f32, rect.w as f32, rect.h as f32)
+            .unwrap_or(bounds)
+    } else {
+        bounds
+    };
     let left = (bounds.left().floor() as i32).max(rect.x);
     let top = (bounds.top().floor() as i32).max(rect.y);
     let right = (bounds.right().ceil() as i32).min(rect.right());
@@ -1388,4 +1607,20 @@ fn take_matching_shot(monitor: &MonitorHandle, shots: &mut [Option<Shot>]) -> Op
         .min_by_key(|&(_, d)| d)?
         .0;
     shots[best].take()
+}
+
+#[cfg(test)]
+mod size_tests {
+    use super::*;
+
+    #[test]
+    fn typed_sizes_parse_and_keep_what_is_left_out() {
+        assert_eq!(parse_size("800x600", (10, 20)), (800, 600));
+        assert_eq!(parse_size("800", (10, 20)), (800, 20));
+        assert_eq!(parse_size("800x", (10, 20)), (800, 20));
+        assert_eq!(parse_size("x0", (10, 20)), (10, 20));
+        assert_eq!(digit(KeyCode::Digit7), Some('7'));
+        assert_eq!(digit(KeyCode::Numpad3), Some('3'));
+        assert_eq!(digit(KeyCode::NumpadEnter), None);
+    }
 }

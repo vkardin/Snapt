@@ -1,5 +1,5 @@
 //! Annotations drawn over the selection: pen, line, arrow, rectangle, ellipse,
-//! marker, text, numbered steps and pixelation.
+//! marker, text, numbered steps, pixelation, blur and spotlight.
 //!
 //! Shapes are kept as vectors in window pixels and rasterized with `tiny_skia`,
 //! so the same shapes render on screen and, scaled, onto the saved image.
@@ -27,11 +27,13 @@ pub enum Tool {
     Pixelate,
     /// Hides what is under a rectangle behind a blur.
     Blur,
+    /// Dims everything but a rectangle, to draw the eye to it.
+    Spotlight,
 }
 
 #[cfg(test)]
 impl Tool {
-    pub const ALL: [Tool; 10] = [
+    pub const ALL: [Tool; 11] = [
         Tool::Pen,
         Tool::Line,
         Tool::Arrow,
@@ -42,6 +44,7 @@ impl Tool {
         Tool::Number,
         Tool::Pixelate,
         Tool::Blur,
+        Tool::Spotlight,
     ];
 }
 
@@ -58,6 +61,8 @@ pub enum Kind {
     Number(Point, u32),
     Pixelate(Point, Point),
     Blur(Point, Point),
+    /// The bright rectangle; everything else around it is dimmed.
+    Spotlight(Point, Point),
 }
 
 /// The unannotated screenshot under a pixmap: pixmap pixel (`px`, `py`) is
@@ -97,6 +102,7 @@ impl Shape {
             Tool::Number => Kind::Number(p, 1),
             Tool::Pixelate => Kind::Pixelate(p, p),
             Tool::Blur => Kind::Blur(p, p),
+            Tool::Spotlight => Kind::Spotlight(p, p),
         };
         Self {
             kind,
@@ -119,9 +125,11 @@ impl Shape {
             Kind::Line(a, b) | Kind::Arrow(a, b) => {
                 *b = if straight { snap_angle(*a, p) } else { p }
             }
-            Kind::Rect(a, b) | Kind::Ellipse(a, b) | Kind::Pixelate(a, b) | Kind::Blur(a, b) => {
-                *b = if straight { square(*a, p) } else { p }
-            }
+            Kind::Rect(a, b)
+            | Kind::Ellipse(a, b)
+            | Kind::Pixelate(a, b)
+            | Kind::Blur(a, b)
+            | Kind::Spotlight(a, b) => *b = if straight { square(*a, p) } else { p },
             Kind::Text(..) | Kind::Number(..) => {}
         }
     }
@@ -135,7 +143,8 @@ impl Shape {
             | Kind::Rect(a, b)
             | Kind::Ellipse(a, b)
             | Kind::Pixelate(a, b)
-            | Kind::Blur(a, b) => a.distance(*b) >= 2.0,
+            | Kind::Blur(a, b)
+            | Kind::Spotlight(a, b) => a.distance(*b) >= 2.0,
             Kind::Text(_, text) => !text.trim().is_empty(),
             Kind::Number(..) => true,
         }
@@ -164,7 +173,8 @@ impl Shape {
             | Kind::Rect(a, b)
             | Kind::Ellipse(a, b)
             | Kind::Pixelate(a, b)
-            | Kind::Blur(a, b) => {
+            | Kind::Blur(a, b)
+            | Kind::Spotlight(a, b) => {
                 shift(a);
                 shift(b);
             }
@@ -172,7 +182,13 @@ impl Shape {
         }
     }
 
-    /// A box that holds everything the shape paints, in window pixels.
+    /// Whether the shape paints outside its bounds too: a spotlight dims all around its rectangle.
+    pub fn paints_everywhere(&self) -> bool {
+        matches!(self.kind, Kind::Spotlight(..))
+    }
+
+    /// A box that holds everything the shape paints, in window pixels; for a
+    /// spotlight, its bright rectangle, which is what picks and moves it.
     pub fn bounds(&self) -> Option<SkRect> {
         let points: Vec<Point> = match &self.kind {
             Kind::Pen(p) | Kind::Marker(p) => p.clone(),
@@ -181,7 +197,8 @@ impl Shape {
             | Kind::Rect(a, b)
             | Kind::Ellipse(a, b)
             | Kind::Pixelate(a, b)
-            | Kind::Blur(a, b) => vec![*a, *b],
+            | Kind::Blur(a, b)
+            | Kind::Spotlight(a, b) => vec![*a, *b],
             Kind::Number(c, _) => {
                 let r = self.number_radius();
                 vec![
@@ -201,7 +218,11 @@ impl Shape {
         };
         let margin = match self.kind {
             Kind::Arrow(..) => self.size * 4.0 + 4.0,
-            Kind::Text(..) | Kind::Number(..) | Kind::Pixelate(..) | Kind::Blur(..) => 2.0,
+            Kind::Text(..)
+            | Kind::Number(..)
+            | Kind::Pixelate(..)
+            | Kind::Blur(..)
+            | Kind::Spotlight(..) => 2.0,
             _ => self.stroke_width() / 2.0 + 2.0,
         };
         let (mut l, mut t, mut r, mut b) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
@@ -306,6 +327,12 @@ impl Shape {
                 let radius = ((self.size * 2.0).max(6.0) * transform.sx).round().max(1.0) as i32;
                 blur(pixmap, a, b, radius, backdrop);
             }
+            Kind::Spotlight(a, b) => {
+                let (mut a, mut b) = (*a, *b);
+                transform.map_point(&mut a);
+                transform.map_point(&mut b);
+                dim_around(pixmap, &[(a, b)]);
+            }
             Kind::Text(at, text) => {
                 let mut at = *at;
                 transform.map_point(&mut at);
@@ -338,6 +365,72 @@ impl Shape {
             pixmap.fill_path(path, paint, FillRule::Winding, transform, None);
         }
         pixmap.stroke_path(path, paint, stroke, transform, None);
+    }
+}
+
+/// Paints `shapes` in order into `pixmap`. Spotlights go first, under the
+/// rest, and share one dimmed backdrop, so two of them do not dim each other.
+pub fn draw_all(
+    shapes: &[Shape],
+    pixmap: &mut Pixmap,
+    transform: Transform,
+    backdrop: Option<&Backdrop>,
+) {
+    let holes: Vec<(Point, Point)> = shapes
+        .iter()
+        .filter_map(|s| match s.kind {
+            Kind::Spotlight(mut a, mut b) => {
+                transform.map_point(&mut a);
+                transform.map_point(&mut b);
+                Some((a, b))
+            }
+            _ => None,
+        })
+        .collect();
+    if !holes.is_empty() {
+        dim_around(pixmap, &holes);
+    }
+    for shape in shapes.iter().filter(|s| !s.paints_everywhere()) {
+        shape.draw(pixmap, transform, backdrop);
+    }
+}
+
+/// How dark a spotlight makes the rest of the picture.
+const SPOTLIGHT_DIM: f32 = 0.55;
+
+/// Darkens `pixmap` everywhere outside the device-pixel rectangles `holes`.
+fn dim_around(pixmap: &mut Pixmap, holes: &[(Point, Point)]) {
+    let (pw, ph) = (pixmap.width() as i32, pixmap.height() as i32);
+    let holes: Vec<(i32, i32, i32, i32)> = holes
+        .iter()
+        .map(|(a, b)| {
+            (
+                (a.x.min(b.x).round() as i32).clamp(0, pw),
+                (a.y.min(b.y).round() as i32).clamp(0, ph),
+                (a.x.max(b.x).round() as i32).clamp(0, pw),
+                (a.y.max(b.y).round() as i32).clamp(0, ph),
+            )
+        })
+        .collect();
+    let keep = 1.0 - SPOTLIGHT_DIM;
+    let add = (SPOTLIGHT_DIM * 255.0).round() as u32;
+    let scale = |v: u8| (v as f32 * keep).round() as u8;
+    let data = pixmap.data_mut();
+    for y in 0..ph {
+        for x in 0..pw {
+            let lit = holes
+                .iter()
+                .any(|&(l, t, r, b)| x >= l && x < r && y >= t && y < b);
+            if lit {
+                continue;
+            }
+            // Black at SPOTLIGHT_DIM over what is there, premultiplied.
+            let i = ((y * pw + x) * 4) as usize;
+            let px = &mut data[i..i + 4];
+            let alpha = (px[3] as u32 * (255 - add) / 255 + add).min(255) as u8;
+            let dimmed = [scale(px[0]), scale(px[1]), scale(px[2]), alpha];
+            px.copy_from_slice(&dimmed);
+        }
     }
 }
 
@@ -668,9 +761,7 @@ pub fn flatten(image: &mut image::RgbaImage, shapes: &[Shape], x: f32, y: f32, s
         y: 0,
         scale: 1.0,
     };
-    for shape in shapes {
-        shape.draw(&mut layer, transform, Some(&backdrop));
-    }
+    draw_all(shapes, &mut layer, transform, Some(&backdrop));
     for (dst, src) in image.pixels_mut().zip(layer.data().chunks_exact(4)) {
         let a = src[3] as u32;
         if a == 0 {
@@ -771,6 +862,23 @@ mod tests {
     }
 
     #[test]
+    fn spotlights_dim_everything_but_their_holes() {
+        let mut image = RgbaImage::from_pixel(60, 30, Rgba([200, 200, 200, 255]));
+        let spot = |x: f32| {
+            let mut s = Shape::start(Tool::Spotlight, pt(x, 5.0), 0, 3.0);
+            s.drag_to(pt(x + 10.0, 25.0), false);
+            s
+        };
+        flatten(&mut image, &[spot(5.0), spot(40.0)], 0.0, 0.0, 1.0);
+        // Both holes stay as they were, and the two do not darken each other.
+        assert_eq!(image.get_pixel(10, 15).0, [200, 200, 200, 255]);
+        assert_eq!(image.get_pixel(45, 15).0, [200, 200, 200, 255]);
+        let dim = image.get_pixel(30, 15).0;
+        assert!(dim[0] > 60 && dim[0] < 120 && dim[3] == 255, "{dim:?}");
+        assert_eq!(image.get_pixel(30, 2).0, dim);
+    }
+
+    #[test]
     fn filled_rectangles_cover_their_inside() {
         let mut image = RgbaImage::from_pixel(30, 30, Rgba([0, 0, 0, 255]));
         let mut shape = Shape::start(Tool::Rect, pt(5.0, 5.0), 0xFF0000, 2.0);
@@ -794,7 +902,7 @@ mod tests {
 
     #[test]
     fn every_tool_paints_inside_its_bounds() {
-        for tool in Tool::ALL {
+        for tool in Tool::ALL.into_iter().filter(|&t| t != Tool::Spotlight) {
             let size = if tool == Tool::Text { 20.0 } else { 3.0 };
             let mut shape = Shape::start(tool, pt(20.0, 20.0), 0x00FF00, size);
             shape.drag_to(pt(60.0, 50.0), false);

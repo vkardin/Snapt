@@ -15,6 +15,8 @@ use crate::paint::fill_round;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Button {
     Tool(Tool),
+    /// Cuts the selection down to a rectangle drawn inside it.
+    Crop,
     Color,
     Undo,
     Close,
@@ -30,7 +32,7 @@ pub enum Button {
     Eyedropper,
 }
 
-const TOOLS: [Button; 13] = [
+const TOOLS: [Button; 15] = [
     Button::Tool(Tool::Pen),
     Button::Tool(Tool::Line),
     Button::Tool(Tool::Arrow),
@@ -41,6 +43,8 @@ const TOOLS: [Button; 13] = [
     Button::Tool(Tool::Number),
     Button::Tool(Tool::Pixelate),
     Button::Tool(Tool::Blur),
+    Button::Tool(Tool::Spotlight),
+    Button::Crop,
     Button::Color,
     Button::Undo,
     Button::Close,
@@ -96,6 +100,8 @@ impl Button {
             Button::Tool(Tool::Pixelate) => (T::Pixelate, "B".into()),
             Button::Tool(Tool::Marker) => (T::Marker, "M".into()),
             Button::Tool(Tool::Text) => (T::Text, "T".into()),
+            Button::Tool(Tool::Spotlight) => (T::Spotlight, "H".into()),
+            Button::Crop => (T::Crop, "C".into()),
             Button::Color => return t(T::Color).into(),
             Button::Undo => (T::Undo, format!("{MOD}+Z")),
             Button::Close => (T::Close, "Esc".into()),
@@ -142,6 +148,8 @@ pub struct Look {
     pub hover: Option<Target>,
     /// The eyedropper is waiting for a click.
     pub picking: bool,
+    /// The crop tool is on.
+    pub cropping: bool,
 }
 
 impl Toolbar {
@@ -361,7 +369,8 @@ impl Toolbar {
                 }
             } else {
                 for &(b, r) in self.buttons.iter().filter(|(_, r)| overlaps(*r, *panel)) {
-                    let active = matches!(b, Button::Tool(t) if Some(t) == look.tool);
+                    let active = matches!(b, Button::Tool(t) if Some(t) == look.tool)
+                        || (b == Button::Crop && look.cropping);
                     let hovered = look.hover == Some(Target::Button(b));
                     if active {
                         fill_round(&mut pixmap, inset(local(r), 1.5 * s), 5.0 * s, ACCENT, 1.0);
@@ -541,6 +550,27 @@ fn icon(pixmap: &mut Pixmap, button: Button, look: &Look, transform: Transform) 
             p.line_to(8.0, 13.5);
             p.move_to(6.0, 13.5);
             p.line_to(10.0, 13.5);
+        }
+        Button::Tool(Tool::Spotlight) => {
+            // A bright square in a dimmed frame.
+            let mut faint = paint.clone();
+            faint.set_color_rgba8(0xF4, 0xF4, 0xF6, 80);
+            let mut frame = PathBuilder::new();
+            frame.push_rect(SkRect::from_xywh(1.5, 1.5, 13.0, 13.0).unwrap());
+            frame.push_rect(SkRect::from_xywh(5.0, 5.0, 6.0, 6.0).unwrap());
+            if let Some(path) = frame.finish() {
+                pixmap.fill_path(&path, &faint, FillRule::EvenOdd, transform, None);
+            }
+            p.push_rect(SkRect::from_xywh(5.0, 5.0, 6.0, 6.0).unwrap());
+        }
+        Button::Crop => {
+            // Two corner brackets that cross.
+            p.move_to(4.5, 1.5);
+            p.line_to(4.5, 11.5);
+            p.line_to(14.5, 11.5);
+            p.move_to(1.5, 4.5);
+            p.line_to(11.5, 4.5);
+            p.line_to(11.5, 14.5);
         }
         Button::Color => {
             let [r, g, b] = rgb(color);
@@ -778,6 +808,7 @@ mod tests {
             fill: false,
             hover: Some(Target::Button(Button::Save)),
             picking: false,
+            cropping: false,
         };
         bar.draw(&mut buf, 600, &look);
         let tools = bar.panels[0];
