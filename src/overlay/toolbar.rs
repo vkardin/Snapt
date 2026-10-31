@@ -492,9 +492,22 @@ fn inset(r: Option<SkRect>, by: f32) -> Option<SkRect> {
 
 /// Draws a button's icon on a 16 × 16 grid mapped through `transform`.
 fn icon(pixmap: &mut Pixmap, button: Button, look: &Look, transform: Transform) {
-    let color = look.color;
+    draw_icon(pixmap, button, 0xF4F4F6, look.color, look.fill, transform);
+}
+
+/// Draws `button`'s icon in `ink`, on a 16 × 16 grid mapped through
+/// `transform`; the settings window shows the editor's tools with it too.
+pub fn draw_icon(
+    pixmap: &mut Pixmap,
+    button: Button,
+    ink: u32,
+    color: u32,
+    fill: bool,
+    transform: Transform,
+) {
+    let [ir, ig, ib] = rgb(ink);
     let mut paint = Paint::default();
-    paint.set_color_rgba8(0xF4, 0xF4, 0xF6, 255);
+    paint.set_color_rgba8(ir, ig, ib, 255);
     paint.anti_alias = true;
     let stroke = Stroke {
         width: 1.6,
@@ -536,7 +549,7 @@ fn icon(pixmap: &mut Pixmap, button: Button, look: &Look, transform: Transform) 
             p.cubic_to(12.0, 7.0, 8.0, 2.5, 8.0, 2.5);
             p.close();
             let mut faint = paint.clone();
-            faint.set_color_rgba8(0xF4, 0xF4, 0xF6, 90);
+            faint.set_color_rgba8(ir, ig, ib, 90);
             if let Some(dots) = PathBuilder::from_circle(8.0, 9.5, 1.6) {
                 pixmap.fill_path(&dots, &faint, FillRule::Winding, transform, None);
             }
@@ -563,7 +576,7 @@ fn icon(pixmap: &mut Pixmap, button: Button, look: &Look, transform: Transform) 
             wide.move_to(4.0, 11.0);
             wide.line_to(12.0, 3.0);
             let mut faint = paint.clone();
-            faint.set_color_rgba8(0xF4, 0xF4, 0xF6, 110);
+            faint.set_color_rgba8(ir, ig, ib, 110);
             let thick = Stroke {
                 width: 5.0,
                 line_cap: LineCap::Square,
@@ -586,7 +599,7 @@ fn icon(pixmap: &mut Pixmap, button: Button, look: &Look, transform: Transform) 
         Button::Tool(Tool::Spotlight) => {
             // A bright square in a dimmed frame.
             let mut faint = paint.clone();
-            faint.set_color_rgba8(0xF4, 0xF4, 0xF6, 80);
+            faint.set_color_rgba8(ir, ig, ib, 80);
             let mut frame = PathBuilder::new();
             frame.push_rect(SkRect::from_xywh(1.5, 1.5, 13.0, 13.0).unwrap());
             frame.push_rect(SkRect::from_xywh(5.0, 5.0, 6.0, 6.0).unwrap());
@@ -723,7 +736,7 @@ fn icon(pixmap: &mut Pixmap, button: Button, look: &Look, transform: Transform) 
         }
     }
     if let Some(path) = p.finish() {
-        let filled = matches!(button, Button::Tool(Tool::Rect | Tool::Ellipse)) && look.fill;
+        let filled = matches!(button, Button::Tool(Tool::Rect | Tool::Ellipse)) && fill;
         if filled {
             pixmap.fill_path(&path, &paint, FillRule::Winding, transform, None);
         }
