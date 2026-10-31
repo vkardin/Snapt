@@ -57,6 +57,31 @@ pub enum CopyAs {
     File,
 }
 
+/// Whether Snapt takes over from the system's own screenshot tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplaceMode {
+    /// The system tool keeps its keys.
+    Off,
+    /// Snapt asks before taking over, and asks again when the system takes them back.
+    Ask,
+    /// Snapt takes over by itself.
+    Auto,
+}
+
+impl ReplaceMode {
+    pub fn is_on(self) -> bool {
+        self != ReplaceMode::Off
+    }
+
+    fn code(self) -> &'static str {
+        match self {
+            ReplaceMode::Off => "off",
+            ReplaceMode::Ask => "ask",
+            ReplaceMode::Auto => "auto",
+        }
+    }
+}
+
 /// Parts of Snapt that can be turned off in the settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Feature {
@@ -228,8 +253,8 @@ pub struct Settings {
     /// Open a saved shot in the system's image viewer or editor.
     pub open_after_save: bool,
     pub autostart: bool,
-    /// Take over the PrtSc key from the system's own screenshot tool.
-    pub replace_system: bool,
+    /// Take over PrtSc (and on Windows Win+Shift+S) from the system's own screenshot tool.
+    pub replace_system: ReplaceMode,
     /// Look for a new release once a day.
     pub auto_update: bool,
     /// The interface language; `None` follows the system.
@@ -267,7 +292,12 @@ impl Default for Settings {
             save_on_copy: false,
             open_after_save: false,
             autostart: false,
-            replace_system: false,
+            // New Windows users are asked once whether Snapt should take over.
+            replace_system: if cfg!(target_os = "windows") {
+                ReplaceMode::Ask
+            } else {
+                ReplaceMode::Off
+            },
             auto_update: true,
             language: None,
             color: 0xFF3B30,
@@ -388,7 +418,14 @@ impl Settings {
                 "save_on_copy" => s.save_on_copy = value == "true",
                 "open_after_save" => s.open_after_save = value == "true",
                 "autostart" => s.autostart = value == "true",
-                "replace_system" => s.replace_system = value == "true",
+                "replace_system" => {
+                    // Older versions wrote true or false.
+                    s.replace_system = match value {
+                        "ask" => ReplaceMode::Ask,
+                        "auto" | "true" => ReplaceMode::Auto,
+                        _ => ReplaceMode::Off,
+                    }
+                }
                 "auto_update" => s.auto_update = value != "false",
                 "language" => s.language = Lang::from_code(value),
                 "color" => {
@@ -437,7 +474,7 @@ impl Settings {
         let _ = writeln!(t, "save_on_copy = {}", self.save_on_copy);
         let _ = writeln!(t, "open_after_save = {}", self.open_after_save);
         let _ = writeln!(t, "autostart = {}", self.autostart);
-        let _ = writeln!(t, "replace_system = {}", self.replace_system);
+        let _ = writeln!(t, "replace_system = {}", self.replace_system.code());
         let _ = writeln!(t, "auto_update = {}", self.auto_update);
         let language = self.language.map_or("auto", Lang::code);
         let _ = writeln!(t, "language = {language}");
@@ -599,7 +636,7 @@ mod tests {
             save_on_copy: true,
             open_after_save: true,
             autostart: true,
-            replace_system: true,
+            replace_system: ReplaceMode::Ask,
             auto_update: false,
             language: Some(Lang::Uk),
             color: 0x00FF7F,
@@ -618,6 +655,15 @@ mod tests {
             "nonsense\nstroke = lots\ncolor = blue\nformat = gif\ncopy_as = folder\nunknown = 1",
         );
         assert_eq!(s, Settings::default());
+    }
+
+    #[test]
+    fn old_replace_switches_still_read() {
+        let mode = |text: &str| Settings::parse(text).replace_system;
+        assert_eq!(mode("replace_system = true"), ReplaceMode::Auto);
+        assert_eq!(mode("replace_system = false"), ReplaceMode::Off);
+        assert_eq!(mode("replace_system = ask"), ReplaceMode::Ask);
+        assert_eq!(mode("replace_system = auto"), ReplaceMode::Auto);
     }
 
     #[test]

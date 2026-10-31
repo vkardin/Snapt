@@ -68,8 +68,9 @@ mod windows_impl {
                 Shell::{
                     FOLDERID_CommonPrograms, FOLDERID_Desktop, FOLDERID_LocalAppData,
                     FOLDERID_ProgramFiles, FOLDERID_Programs, FOLDERID_PublicDesktop, IShellLinkW,
-                    IsUserAnAdmin, KF_FLAG_DEFAULT, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW,
-                    SHGetKnownFolderPath, ShellExecuteExW, ShellLink,
+                    IsUserAnAdmin, KF_FLAG_DEFAULT, SEE_MASK_NOASYNC, SHCNE_ASSOCCHANGED,
+                    SHCNF_IDLIST, SHChangeNotify, SHELLEXECUTEINFOW, SHGetKnownFolderPath,
+                    ShellExecuteExW, ShellLink,
                 },
                 WindowsAndMessaging::SW_SHOWNORMAL,
             },
@@ -81,6 +82,8 @@ mod windows_impl {
     /// Where the NSIS installer kept its install folder and language.
     const NSIS_KEY: &str = r"Software\vkardin\Snapt";
     const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+    /// The link class Snapt registers while it replaces the Snipping Tool.
+    const SCREENCLIP_KEY: &str = r"Software\Classes\Snapt.ScreenClip";
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
     fn wide(s: &str) -> Vec<u16> {
@@ -411,6 +414,24 @@ mod windows_impl {
                 .contains(&dir.display().to_string().to_lowercase())
         }) {
             delete_value(HKEY_CURRENT_USER, RUN_KEY, "Snapt");
+        }
+
+        // Snapt's "Replace system screenshots" option: the Snipping Tool gets
+        // PrtSc and the screenshot links back. The link class marks that it was on.
+        if read_string(HKEY_CURRENT_USER, SCREENCLIP_KEY, "").is_some() {
+            let _ = write_values(
+                HKEY_CURRENT_USER,
+                r"Control Panel\Keyboard",
+                &[("PrintScreenKeyForSnippingEnabled", Value::Dword(1))],
+            );
+            delete_value(
+                HKEY_CURRENT_USER,
+                r"Software\RegisteredApplications",
+                "Snapt",
+            );
+            delete_key(HKEY_CURRENT_USER, r"Software\Snapt");
+            delete_key(HKEY_CURRENT_USER, SCREENCLIP_KEY);
+            unsafe { SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None) };
         }
 
         progress(0.6, Step::Removing);

@@ -19,7 +19,7 @@ use crate::{
     pin::{Pin, PinAction},
     platform,
     scroll::{Finished, Scroll, ScrollAction},
-    settings::{self, CopyAs, Feature, Settings, Shortcut},
+    settings::{self, CopyAs, Feature, ReplaceMode, Settings, Shortcut},
     settings_window::{Action, Notice, SettingsWindow, UpdateStatus},
     tray::{Command, Tray},
     updater::{self, Update},
@@ -40,6 +40,11 @@ pub enum UserEvent {
     Recognized(Result<String, ocr::Error>),
     /// The scrolling screenshot grew.
     ScrollGrew,
+    /// A system screenshot key was caught while Snapt replaces the system tool.
+    #[cfg(target_os = "windows")]
+    SystemKey(crate::windows_shot::SystemKey),
+    /// The user answered whether Snapt should replace the system screenshot tool.
+    ReplaceAnswer(bool),
     /// The desktop portal answered a request for the capture shortcut.
     #[cfg(target_os = "linux")]
     PortalShortcut(String, Result<crate::portal::Shortcut, String>),
@@ -118,10 +123,101 @@ impl App {
             portal: Portal::default(),
         };
         app.register_hotkeys();
+        app.start_replacing();
         if app.settings.auto_update {
             app.watch_updates();
         }
         Ok(app)
+    }
+
+    /// Takes over from the system screenshot tool at start, as the settings say.
+    /// Only Windows needs this on every start: elsewhere the change stays made.
+    fn start_replacing(&mut self) {
+        if !platform::REPLACE_MODES {
+            return;
+        }
+        match self.settings.replace_system {
+            ReplaceMode::Off => {}
+            ReplaceMode::Ask if platform::system_tool_active() => self.ask_to_replace(),
+            ReplaceMode::Ask | ReplaceMode::Auto => {
+                self.take_over(false);
+            }
+        }
+    }
+
+    /// Asks in a dialog whether Snapt may replace the system screenshot tool;
+    /// the answer comes back as [`UserEvent::ReplaceAnswer`].
+    fn ask_to_replace(&self) {
+        let proxy = self.proxy.clone();
+        std::thread::spawn(move || {
+            let answer = rfd::MessageDialog::new()
+                .set_level(rfd::MessageLevel::Info)
+                .set_title("Snapt")
+                .set_description(t(T::ReplaceQuestion))
+                .set_buttons(rfd::MessageButtons::YesNo)
+                .show();
+            let yes = answer == rfd::MessageDialogResult::Yes;
+            let _ = proxy.send_event(UserEvent::ReplaceAnswer(yes));
+        });
+    }
+
+    /// Hands the screenshot keys to Snapt. With `confirm`, also opens the page
+    /// where the user makes Snapt the default for the screenshot links, which
+    /// only the user can do.
+    fn take_over(&mut self, confirm: bool) -> bool {
+        if let Err(err) =
+            platform::replace_system_screenshot(true, self.settings.shortcut(Shortcut::Capture))
+        {
+            log::error!("failed to replace the system screenshot tool: {err:#}");
+            return false;
+        }
+        platform::catch_system_keys(Some(self.proxy.clone()));
+        if confirm {
+            platform::confirm_links();
+        }
+        // The system tool may have held the key until now.
+        self.register_hotkey(Shortcut::Capture);
+        true
+    }
+
+    /// Gives the keys and links back to the system screenshot tool.
+    fn give_back(&mut self) -> bool {
+        platform::catch_system_keys(None);
+        platform::release_links();
+        match platform::replace_system_screenshot(false, self.settings.shortcut(Shortcut::Capture))
+        {
+            Ok(()) => true,
+            Err(err) => {
+                log::error!("failed to give the keys back to the system tool: {err:#}");
+                false
+            }
+        }
+    }
+
+    /// Switches the replacement to `mode`, taking over or giving back as needed.
+    fn set_replace_mode(&mut self, mode: ReplaceMode) -> Option<Notice> {
+        let was_on = self.settings.replace_system.is_on();
+        let done = match (was_on, mode.is_on()) {
+            (false, true) => self.take_over(true),
+            (true, false) => self.give_back(),
+            _ => true,
+        };
+        if !done {
+            return Some(Notice::ReplaceFailed);
+        }
+        self.settings.replace_system = mode;
+        None
+    }
+
+    /// Runs a global shortcut.
+    fn run_shortcut(&mut self, event_loop: &ActiveEventLoop, which: Shortcut) {
+        match which {
+            Shortcut::Capture => self.start_capture(event_loop, None, false),
+            Shortcut::Pick => self.start_capture(event_loop, None, true),
+            Shortcut::FullScreen => self.copy_full_screen(),
+            Shortcut::RepeatArea => self.start_capture(event_loop, self.last_area, false),
+            _ => {}
+        }
     }
 
     /// (Re)registers one shortcut from the settings. Returns false when the
@@ -590,6 +686,7 @@ impl App {
             Action::Close => {
                 // The window is hidden, not destroyed; free its memory anyway.
                 self.settings_window = None;
+                platform::pause_system_keys(false);
                 self.register_hotkeys();
                 return;
             }
@@ -610,29 +707,33 @@ impl App {
                 }
             }
             Action::ReplaceSystem => {
-                let on = !self.settings.replace_system;
-                match platform::replace_system_screenshot(
-                    on,
-                    self.settings.shortcut(Shortcut::Capture),
-                ) {
-                    Ok(()) => {
-                        self.settings.replace_system = on;
-                        // The system tool may have held the key until now.
-                        self.register_hotkey(Shortcut::Capture);
-                    }
-                    Err(err) => {
-                        log::error!("failed to replace the system screenshot tool: {err:#}");
-                        notice = Some(Notice::ReplaceFailed);
-                    }
+                let mode = match self.settings.replace_system {
+                    ReplaceMode::Off if platform::REPLACE_MODES => ReplaceMode::Ask,
+                    ReplaceMode::Off => ReplaceMode::Auto,
+                    ReplaceMode::Ask | ReplaceMode::Auto => ReplaceMode::Off,
+                };
+                notice = self.set_replace_mode(mode);
+            }
+            Action::ReplaceMode(mode) => {
+                let was_on = self.settings.replace_system.is_on();
+                notice = self.set_replace_mode(mode);
+                // A choice made here is the user's go-ahead, so the links page
+                // opens again if they still go to the system tool.
+                if was_on && notice.is_none() {
+                    platform::confirm_links();
                 }
             }
             // While a field listens, the current shortcuts must not fire.
             Action::Recording(true) => {
+                platform::pause_system_keys(true);
                 for which in Shortcut::ALL {
                     self.unregister_hotkey(which);
                 }
             }
-            Action::Recording(false) => self.register_hotkeys(),
+            Action::Recording(false) => {
+                platform::pause_system_keys(false);
+                self.register_hotkeys();
+            }
             Action::Hotkey(which, hotkey) => notice = self.set_hotkey(which, hotkey),
             Action::ResetHotkey(which) => {
                 notice = self.set_hotkey(which, which.default_keys().into());
@@ -705,7 +806,7 @@ impl App {
             return Some(Notice::ShortcutTaken);
         }
         if which == Shortcut::Capture
-            && self.settings.replace_system
+            && self.settings.replace_system.is_on()
             && let Err(err) =
                 platform::replace_system_screenshot(true, self.settings.shortcut(Shortcut::Capture))
         {
@@ -750,6 +851,7 @@ impl ApplicationHandler<UserEvent> for App {
                     }
                     _ => {}
                 }
+                self.redraw_settings();
             }
             UserEvent::Request(request) => self.request(event_loop, request),
             #[cfg(target_os = "linux")]
@@ -834,6 +936,13 @@ impl ApplicationHandler<UserEvent> for App {
         if !overlay.owns(id) {
             return;
         }
+        // A minimized overlay would linger as a bare "Snapt" title bar, so it closes instead.
+        if let WindowEvent::Resized(size) = &event
+            && (size.width == 0 || size.height == 0)
+        {
+            self.finish_capture(event_loop, Outcome::Cancel);
+            return;
+        }
         let outcome = overlay.window_event(id, event);
         if let Some(image) = overlay.take_recognize() {
             let proxy = self.proxy.clone();
@@ -852,6 +961,7 @@ impl ApplicationHandler<UserEvent> for App {
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        platform::catch_system_keys(None);
         self.overlay = None;
         self.pins.clear();
         for which in Shortcut::ALL {

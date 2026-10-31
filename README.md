@@ -138,8 +138,10 @@ Pick **Settings…** in the tray menu. There you can:
   the keys are already taken;
 - on **Features**, turn off text recognition, scrolling screenshots, pinning, image search,
   printing, video recording or the color picker; their buttons and shortcuts go away;
-- let Snapt replace the system screenshot tool: on Windows, PrtSc stops opening the Snipping
-  Tool; on GNOME, the shortcut opens Snapt instead of GNOME Screenshot, on Wayland too; on
+- let Snapt replace the system screenshot tool: on Windows, PrtSc and Win+Shift+S open Snapt
+  instead of the Snipping Tool, Snapt can be picked for the `ms-screenclip` and
+  `ms-screensketch` links (Windows asks you to confirm that one), and Snapt either asks first
+  or replaces it on its own; turning the option off gives everything back; on GNOME, the shortcut opens Snapt instead of GNOME Screenshot, on Wayland too; on
   macOS and other desktops, the window explains the one manual step;
 - choose the screenshots folder and format, save without a dialog, also save what you copy,
   open a file once it is saved, and start at login;

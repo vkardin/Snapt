@@ -45,9 +45,9 @@ zbus = "5"
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 tray-icon = "0.26"
 
-# Text recognition uses the system's own engine.
+# Text recognition uses the system's own engine; the Win32 parts take over from the Snipping Tool.
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = ["Foundation", "Foundation_Collections", "Graphics_Imaging", "Media_Ocr", "Storage_Streams", "Win32_System_WinRT"] }
+windows = { version = "0.62", features = ["Foundation", "Foundation_Collections", "Graphics_Imaging", "Media_Ocr", "Storage_Streams", "Win32_Foundation", "Win32_System_LibraryLoader", "Win32_Security", "Win32_System_Registry", "Win32_System_Threading", "Win32_System_WinRT", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

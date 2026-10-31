@@ -1563,8 +1563,11 @@ fn platform_attributes(
     monitor: &MonitorHandle,
 ) -> winit::window::WindowAttributes {
     use winit::platform::windows::WindowAttributesExtWindows;
+    // No minimize button: Win+M or Win+D would otherwise shrink the overlay to a
+    // bare "Snapt" title bar, since it has no taskbar button to come back from.
     attributes
         .with_skip_taskbar(true)
+        .with_enabled_buttons(winit::window::WindowButtons::CLOSE)
         .with_fullscreen(Some(winit::window::Fullscreen::Borderless(Some(
             monitor.clone(),
         ))))
