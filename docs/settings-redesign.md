@@ -1,6 +1,6 @@
 # Settings window redesign (proposal for 2.6)
 
-Status: proposal, nothing implemented yet. Pick an option (or mix) before work starts.
+Status: option C (sidebar, scrolling, hints, reset per section, editor tiles, light and dark themes, search) implemented for 3.0, together with the file name and tray history rows.
 
 ## Where we are (2.5.4)
 

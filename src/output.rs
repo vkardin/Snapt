@@ -259,7 +259,7 @@ fn unique_path(dir: &Path, name: &str) -> PathBuf {
 
 /// Fills the `strftime` template with `time`. A template chrono can't read
 /// falls back to the default, and characters no file system allows become `-`.
-fn file_name(time: DateTime<Local>, template: &str, format: Format) -> String {
+pub fn file_name(time: DateTime<Local>, template: &str, format: Format) -> String {
     let valid = !StrftimeItems::new(template).any(|item| matches!(item, Item::Error));
     let template = if valid { template } else { DEFAULT_FILE_NAME };
     let stem: String = time

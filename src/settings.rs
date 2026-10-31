@@ -288,6 +288,14 @@ pub fn overlay_shortcut(
         .map(|(which, _)| *which)
 }
 
+/// The look of Snapt's windows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Theme {
+    System,
+    Light,
+    Dark,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     /// The keys of each `Shortcut`, as `global_hotkey` parses them, e.g.
@@ -317,6 +325,8 @@ pub struct Settings {
     pub auto_update: bool,
     /// The interface language; `None` follows the system.
     pub language: Option<Lang>,
+    /// Light or dark windows; `System` follows the system.
+    pub theme: Theme,
     pub color: u32,
     pub stroke: f32,
     pub text_size: f32,
@@ -361,6 +371,7 @@ impl Default for Settings {
             },
             auto_update: true,
             language: None,
+            theme: Theme::System,
             color: 0xFF3B30,
             stroke: 3.0,
             text_size: 20.0,
@@ -502,6 +513,13 @@ impl Settings {
                 }
                 "auto_update" => s.auto_update = value != "false",
                 "language" => s.language = Lang::from_code(value),
+                "theme" => {
+                    s.theme = match value.to_ascii_lowercase().as_str() {
+                        "light" => Theme::Light,
+                        "dark" => Theme::Dark,
+                        _ => Theme::System,
+                    }
+                }
                 "color" => {
                     if let Ok(c) = u32::from_str_radix(value.trim_start_matches('#'), 16) {
                         s.color = c & 0xFFFFFF;
@@ -561,6 +579,12 @@ impl Settings {
         let _ = writeln!(t, "auto_update = {}", self.auto_update);
         let language = self.language.map_or("auto", Lang::code);
         let _ = writeln!(t, "language = {language}");
+        let theme = match self.theme {
+            Theme::System => "system",
+            Theme::Light => "light",
+            Theme::Dark => "dark",
+        };
+        let _ = writeln!(t, "theme = {theme}");
         let _ = writeln!(t, "color = #{:06X}", self.color);
         let _ = writeln!(t, "stroke = {}", self.stroke);
         let _ = writeln!(t, "text_size = {}", self.text_size);
@@ -738,6 +762,7 @@ mod tests {
             replace_system: ReplaceMode::Ask,
             auto_update: false,
             language: Some(Lang::Uk),
+            theme: Theme::Light,
             color: 0x00FF7F,
             stroke: 5.0,
             text_size: 28.0,

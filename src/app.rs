@@ -20,7 +20,7 @@ use crate::{
     platform,
     scroll::{Finished, Scroll, ScrollAction},
     settings::{self, CopyAs, Feature, ReplaceMode, Settings, Shortcut},
-    settings_window::{Action, Notice, SettingsWindow, UpdateStatus},
+    settings_window::{Action, FEATURES, Notice, Section, SettingsWindow, TOOLS, UpdateStatus},
     tray::{Command, Tray},
     updater::{self, Update},
 };
@@ -794,6 +794,7 @@ impl App {
             Action::WindowOpensEditor => {
                 self.settings.window_opens_editor = !self.settings.window_opens_editor;
             }
+            Action::CaptureCursor => self.settings.capture_cursor = !self.settings.capture_cursor,
             Action::QuickSave => self.settings.quick_save = !self.settings.quick_save,
             Action::SaveOnCopy => self.settings.save_on_copy = !self.settings.save_on_copy,
             Action::OpenAfterSave => {
@@ -810,11 +811,22 @@ impl App {
                 updater::check_now(self.proxy.clone());
             }
             Action::InstallUpdate => self.start_update(),
-            Action::Website => {
-                if let Err(err) = open::that_detached(env!("CARGO_PKG_HOMEPAGE")) {
-                    log::error!("failed to open the website: {err}");
+            Action::Link(url) => {
+                if let Err(err) = open::that_detached(url) {
+                    log::error!("failed to open {url}: {err}");
                 }
             }
+            Action::Theme(theme) => self.settings.theme = theme,
+            Action::FileName(name) => {
+                let name = name.trim();
+                self.settings.file_name = if name.is_empty() {
+                    settings::DEFAULT_FILE_NAME.into()
+                } else {
+                    name.into()
+                };
+            }
+            Action::History(limit) => self.set_history(limit),
+            Action::Reset(section) => notice = self.reset(section),
         }
         self.save_settings();
         if let Some(window) = &mut self.settings_window {
@@ -823,6 +835,74 @@ impl App {
             }
             window.request_redraw();
         }
+    }
+
+    fn set_history(&mut self, limit: usize) {
+        self.settings.history = limit;
+        self.history.set_limit(limit);
+        if let Some(tray) = &mut self.tray {
+            tray.set_history(self.history.entries());
+        }
+    }
+
+    /// Puts the settings of one section of the settings window back to the defaults.
+    fn reset(&mut self, section: Section) -> Option<Notice> {
+        let default = Settings::default();
+        let s = &mut self.settings;
+        let features = |list: &[Feature], s: &mut Settings| {
+            for feature in list {
+                if s.is_enabled(*feature) == default.disabled.contains(feature) {
+                    s.toggle(*feature);
+                }
+            }
+        };
+        match section {
+            Section::General => {
+                s.theme = default.theme;
+                if s.autostart {
+                    self.apply(Action::Autostart);
+                }
+                if self.settings.language.is_some() {
+                    self.apply(Action::Language(None));
+                }
+            }
+            Section::Capture => {
+                s.copy_on_select = default.copy_on_select;
+                s.window_opens_editor = default.window_opens_editor;
+                s.color_format = default.color_format;
+                s.capture_cursor = default.capture_cursor;
+            }
+            Section::Saving => {
+                s.folder = default.folder;
+                s.format = default.format;
+                s.file_name = default.file_name;
+                s.quick_save = default.quick_save;
+                s.save_on_copy = default.save_on_copy;
+                s.open_after_save = default.open_after_save;
+                s.copy_as = default.copy_as;
+                self.set_history(default.history);
+            }
+            Section::Shortcuts => {
+                // One at a time, so a key two shortcuts swapped is free when its turn comes.
+                for which in Shortcut::ALL {
+                    *self.settings.shortcut_mut(which) = String::new();
+                }
+                self.register_hotkeys();
+                let mut notice = None;
+                for which in Shortcut::ALL {
+                    notice = notice.or(self.set_hotkey(which, which.default_keys().into()));
+                }
+                return notice;
+            }
+            Section::Features => {
+                features(&FEATURES, s);
+                self.register_hotkey(Shortcut::Pick);
+                self.rebuild_tray();
+            }
+            Section::Editor => features(&TOOLS, s),
+            Section::System | Section::About => {}
+        }
+        None
     }
 
     /// Switches `which` to `hotkey`, keeping the old one when the new one can't
@@ -968,7 +1048,7 @@ impl ApplicationHandler<UserEvent> for App {
         if let Some(window) = &mut self.settings_window
             && window.id() == id
         {
-            if let Some(action) = window.window_event(event, &self.settings, &self.update_status) {
+            for action in window.window_event(event, &self.settings, &self.update_status) {
                 self.apply(action);
             }
             return;

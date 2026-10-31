@@ -37,9 +37,10 @@ use crate::settings::{self, ColorFormat, Feature, Settings, Shortcut, enabled as
 use annotate::{Backdrop, Canvas, Kind, Shape};
 use render::Frame;
 use selection::{Handle, Hit, Point, Rect, Selection};
-use toolbar::{Button, Look, Target, Toolbar};
+use toolbar::{Look, Target, Toolbar};
 
 pub use annotate::Tool;
+pub use toolbar::{Button, draw_icon};
 
 /// What the user decided to do with the selection.
 pub enum Outcome {
