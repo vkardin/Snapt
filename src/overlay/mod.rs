@@ -630,7 +630,8 @@ impl Overlay {
             KeyCode::KeyT => Some(Tool::Text),
             KeyCode::KeyH => Some(Tool::Spotlight),
             _ => None,
-        };
+        }
+        .filter(|tool| on(toolbar::tool_feature(*tool)));
         match code {
             KeyCode::Escape if self.pick_only => Some(Outcome::Cancel),
             KeyCode::Escape if self.picking => {
@@ -712,7 +713,7 @@ impl Overlay {
                 screen.request_redraw();
                 None
             }
-            KeyCode::KeyC if !command && has_selection => {
+            KeyCode::KeyC if !command && has_selection && on(Feature::Crop) => {
                 screen.commit_text();
                 screen.cropping = !screen.cropping;
                 self.style.tool = None;

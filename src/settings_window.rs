@@ -65,6 +65,7 @@ pub enum Tab {
     General,
     Shortcuts,
     Features,
+    Editor,
 }
 
 /// Where the update check stands, shown under the update switch.
@@ -507,6 +508,7 @@ fn build(
         (Tab::General, t(T::General)),
         (Tab::Shortcuts, t(T::Shortcuts)),
         (Tab::Features, t(T::Features)),
+        (Tab::Editor, t(T::Editor)),
     ];
     let seg_w = (right - left) / tabs.len() as f32;
     for (i, (id, name)) in tabs.iter().enumerate() {
@@ -539,6 +541,7 @@ fn build(
                 y += ROW;
             }
         }
+        Tab::Editor => y = editor(ui, settings, y),
     }
     debug_assert!(y <= HEIGHT as f32 - 52.0, "the page runs into the footer");
     let y = ui.divider(HEIGHT as f32 - 53.0);
@@ -603,6 +606,30 @@ fn build(
         // Anywhere else closes the list.
         ui.hits.append(&mut hits);
     }
+}
+
+/// The editor page: a switch per drawing tool; returns where it ends.
+fn editor(ui: &mut Ui, settings: &Settings, mut y: f32) -> f32 {
+    let (left, right) = (MARGIN, WIDTH as f32 - MARGIN);
+    for (feature, name) in [
+        (Feature::Pen, t(T::Pen)),
+        (Feature::Line, t(T::Line)),
+        (Feature::Arrow, t(T::Arrow)),
+        (Feature::Rect, t(T::Rectangle)),
+        (Feature::Ellipse, t(T::Ellipse)),
+        (Feature::Marker, t(T::Marker)),
+        (Feature::Text, t(T::Text)),
+        (Feature::Number, t(T::Number)),
+        (Feature::Pixelate, t(T::Pixelate)),
+        (Feature::Blur, t(T::Blur)),
+        (Feature::Spotlight, t(T::Spotlight)),
+        (Feature::Crop, t(T::Crop)),
+    ] {
+        ui.switch(Id::Feature(feature), name, y, settings.is_enabled(feature));
+        y += ROW;
+    }
+    ui.wrapped(t(T::EditorHint), left, y + 4.0, right - left, 12.0, MUTED);
+    y + 34.0
 }
 
 /// The general page; returns where it ends.
@@ -1071,7 +1098,7 @@ mod tests {
                 hits: Vec::new(),
             };
             let update = UpdateStatus::Available("9.9.9".into());
-            for tab in [Tab::General, Tab::Shortcuts, Tab::Features] {
+            for tab in [Tab::General, Tab::Shortcuts, Tab::Features, Tab::Editor] {
                 build(
                     &mut ui,
                     &Settings::default(),
@@ -1154,6 +1181,7 @@ mod tests {
             (Lang::Ru, "settings-ru", Tab::General),
             (Lang::En, "settings-shortcuts-en", Tab::Shortcuts),
             (Lang::Ru, "settings-features-ru", Tab::Features),
+            (Lang::Uk, "settings-editor-uk", Tab::Editor),
         ] {
             let _lang = crate::snapshot::language(lang);
             let mut pixmap = Pixmap::new(WIDTH as u32, HEIGHT as u32).unwrap();
