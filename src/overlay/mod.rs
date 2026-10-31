@@ -37,9 +37,10 @@ use crate::settings::{self, ColorFormat, Feature, Settings, Shortcut, enabled as
 use annotate::{Backdrop, Canvas, Kind, Shape};
 use render::Frame;
 use selection::{Handle, Hit, Point, Rect, Selection};
-use toolbar::{Button, Look, Target, Toolbar};
+use toolbar::{Look, Target, Toolbar};
 
 pub use annotate::Tool;
+pub use toolbar::{Button, draw_icon};
 
 /// What the overlay is opened for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,6 +133,11 @@ pub struct Overlay {
     copied: Option<String>,
     /// A selection waiting for text recognition.
     recognize: Option<RgbaImage>,
+    /// A selection waiting to have its personal data found and blurred.
+    redact: Option<RgbaImage>,
+    /// Where that selection sits: the screen and its top-left corner in
+    /// window pixels, and image pixels per window pixel.
+    redact_at: Option<(usize, f32, f32, f32)>,
     /// A short message over the screen, such as OCR progress.
     status: Option<String>,
 }
@@ -230,6 +236,8 @@ impl Overlay {
             copy_window: settings.copy_on_select && !settings.window_opens_editor,
             copied: None,
             recognize: None,
+            redact: None,
+            redact_at: None,
             status: None,
         };
         if let Some(area) = area
@@ -282,6 +290,65 @@ impl Overlay {
     fn start_recognize(&mut self, image: RgbaImage) {
         self.recognize = Some(image);
         self.set_status(Some(t(T::Recognizing).into()));
+    }
+
+    /// A selection to find personal data in, once.
+    pub fn take_redact(&mut self) -> Option<RgbaImage> {
+        self.redact.take()
+    }
+
+    fn start_redact(&mut self, index: usize) {
+        let Some((image, x, y, scale)) = self.screens[index].unannotated() else {
+            return;
+        };
+        self.redact = Some(image);
+        self.redact_at = Some((index, x, y, scale));
+        self.set_status(Some(t(T::Redacting).into()));
+    }
+
+    /// Blurs `areas`, given in the pixels of the image `take_redact` handed
+    /// out, as one undo step. Returns how many there were.
+    pub fn redacted(&mut self, areas: &[crate::redact::Area]) -> usize {
+        let Some((index, x0, y0, scale)) = self.redact_at.take() else {
+            return 0;
+        };
+        let color = self.style.color;
+        let Some(screen) = self.screens.get_mut(index) else {
+            return 0;
+        };
+        let shapes = areas
+            .iter()
+            .map(|a| {
+                let at = |x: f32, y: f32| tiny_skia::Point::from_xy(x0 + x / scale, y0 + y / scale);
+                Shape {
+                    kind: Kind::Blur(at(a.x, a.y), at(a.x + a.w, a.y + a.h)),
+                    color,
+                    // Strong enough that no letter shows through.
+                    size: 8.0,
+                    fill: false,
+                }
+            })
+            .collect();
+        screen.commit_text();
+        screen.canvas.push_all(shapes);
+        screen.request_redraw();
+        self.set_status(None);
+        areas.len()
+    }
+
+    /// Reads the QR codes in the selection: copies them and closes, or says there are none.
+    fn read_qr(&mut self, index: usize) -> Option<Outcome> {
+        let image = self.screens[index].unannotated()?.0;
+        match crate::qr::read(&image) {
+            Some(text) => {
+                self.copied = Some(text);
+                Some(Outcome::Cancel)
+            }
+            None => {
+                self.set_status(Some(t(T::NoQr).into()));
+                None
+            }
+        }
     }
 
     /// Text the overlay wants on the clipboard, once.
@@ -564,6 +631,12 @@ impl Overlay {
                 }
                 return None;
             }
+            Target::Button(Button::Qr) => return self.read_qr(index),
+            Target::Button(Button::Redact) => {
+                screen.commit_text();
+                self.start_redact(index);
+                return None;
+            }
             Target::Button(Button::Search) => return screen.output().map(Outcome::Search),
             Target::Button(Button::Print) => return screen.output().map(Outcome::Print),
             Target::Button(Button::Pin) => return screen.pin(),
@@ -749,6 +822,12 @@ impl Overlay {
                     screen.canvas.remove(i);
                 }
                 screen.request_redraw();
+                None
+            }
+            KeyCode::KeyQ if !command && has_selection && on(Feature::Qr) => self.read_qr(index),
+            KeyCode::KeyD if !command && has_selection && on(Feature::Redact) => {
+                screen.commit_text();
+                self.start_redact(index);
                 None
             }
             KeyCode::KeyC if !command && has_selection && on(Feature::Crop) => {
@@ -1378,6 +1457,15 @@ impl Screen {
             scale,
         );
         Some(shot)
+    }
+
+    /// The selected part of the screenshot without the drawings, where its
+    /// top-left corner is in window pixels, and image pixels per window pixel.
+    fn unannotated(&self) -> Option<(RgbaImage, f32, f32, f32)> {
+        let (x, y, w, h) = self.to_image(self.selection.rect()?)?;
+        let image = imageops::crop_imm(&self.image, x, y, w, h).to_image();
+        let scale = self.image.width() as f32 / self.frame.width as f32;
+        Some((image, x as f32 / scale, y as f32 / scale, scale))
     }
 
     /// The selection, or the whole monitor when nothing is selected.

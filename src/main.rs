@@ -9,6 +9,7 @@
 mod app;
 mod capture;
 mod crash;
+mod cursor;
 mod font;
 mod history;
 mod i18n;
@@ -23,7 +24,9 @@ mod platform;
 mod pointer;
 #[cfg(target_os = "linux")]
 mod portal;
+mod qr;
 mod record;
+mod redact;
 mod scroll;
 mod settings;
 mod settings_window;
@@ -31,6 +34,7 @@ mod sha256;
 #[cfg(test)]
 mod snapshot;
 mod tray;
+mod tray_menu;
 mod updater;
 #[cfg(target_os = "windows")]
 mod windows_shot;
@@ -99,6 +103,22 @@ fn main() -> Result<()> {
     tray_icon::menu::MenuEvent::set_event_handler(Some(move |event| {
         let _ = proxy.send_event(UserEvent::Menu(event));
     }));
+    // On Windows a click on the tray icon opens Snapt's own menu.
+    #[cfg(target_os = "windows")]
+    {
+        let proxy = event_loop.create_proxy();
+        tray_icon::TrayIconEvent::set_event_handler(Some(move |event| {
+            if let tray_icon::TrayIconEvent::Click {
+                position,
+                button: tray_icon::MouseButton::Left | tray_icon::MouseButton::Right,
+                button_state: tray_icon::MouseButtonState::Up,
+                ..
+            } = event
+            {
+                let _ = proxy.send_event(UserEvent::TrayClick(position));
+            }
+        }));
+    }
     let proxy = event_loop.create_proxy();
     global_hotkey::GlobalHotKeyEvent::set_event_handler(Some(move |event| {
         let _ = proxy.send_event(UserEvent::Hotkey(event));

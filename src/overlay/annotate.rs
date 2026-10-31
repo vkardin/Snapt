@@ -668,6 +668,15 @@ impl Canvas {
         }
     }
 
+    /// Adds `shapes` as one change, so a single undo takes them all back.
+    pub fn push_all(&mut self, shapes: Vec<Shape>) {
+        let shapes: Vec<Shape> = shapes.into_iter().filter(Shape::is_visible).collect();
+        if !shapes.is_empty() {
+            self.checkpoint();
+            self.shapes.extend(shapes);
+        }
+    }
+
     /// The topmost shape whose bounds hold `p`.
     pub fn hit(&self, p: Point) -> Option<usize> {
         self.shapes.iter().rposition(|s| {

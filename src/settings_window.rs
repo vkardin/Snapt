@@ -3,15 +3,21 @@
 //! A small immediate-mode UI drawn with the same software renderer as the
 //! overlay: every frame lays the controls out, draws them and keeps their
 //! rectangles for hit testing. No GUI toolkit, so Snapt stays small.
+//!
+//! Sections sit in a sidebar on the left; the page on the right scrolls when
+//! it doesn't fit. Typing anywhere searches every section at once.
 
 use std::{num::NonZeroU32, rc::Rc};
 
 use anyhow::{Context, Result};
 use softbuffer::Surface;
-use tiny_skia::{LineCap, LineJoin, Paint, PathBuilder, Pixmap, Rect as SkRect, Stroke, Transform};
+use tiny_skia::{
+    FilterQuality, LineCap, LineJoin, Paint, PathBuilder, Pixmap, PixmapPaint, Rect as SkRect,
+    Stroke, Transform,
+};
 use winit::{
     dpi::{LogicalSize, PhysicalPosition},
-    event::{ElementState, KeyEvent, MouseButton, WindowEvent},
+    event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, OwnedDisplayHandle},
     keyboard::{KeyCode, ModifiersState, PhysicalKey},
     window::{CursorIcon, Window, WindowId},
@@ -21,9 +27,10 @@ use crate::{
     font,
     i18n::{Lang, T, t},
     icon,
+    overlay::{Button, Tool, draw_icon},
     paint::{fill_round, rgb},
     platform,
-    settings::{ColorFormat, CopyAs, Feature, Format, ReplaceMode, Settings, Shortcut},
+    settings::{ColorFormat, CopyAs, Feature, Format, ReplaceMode, Settings, Shortcut, Theme},
     tray::hotkey_label,
 };
 
@@ -31,6 +38,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     Language(Option<Lang>),
+    Theme(Theme),
     Autostart,
     ReplaceSystem,
     /// Whether Snapt asks before taking over from the system tool or just does it.
@@ -46,29 +54,114 @@ pub enum Action {
     ChangeFolder,
     OpenFolder,
     Format(Format),
+    FileName(String),
+    History(usize),
     CopyAs(CopyAs),
     CopyOnSelect,
     WindowOpensEditor,
+    CaptureCursor,
     QuickSave,
     SaveOnCopy,
     OpenAfterSave,
     AutoUpdate,
     CheckUpdates,
     InstallUpdate,
-    Website,
+    /// Puts every setting of a section back to its default.
+    Reset(Section),
+    /// Opens a web page.
+    Link(&'static str),
     Close,
 }
 
-/// The pages of the window.
+/// The sections in the sidebar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Tab {
+pub enum Section {
     General,
+    Capture,
+    Saving,
     Shortcuts,
     Features,
     Editor,
+    System,
+    About,
 }
 
-/// Where the update check stands, shown under the update switch.
+impl Section {
+    pub const ALL: [Section; 8] = [
+        Section::General,
+        Section::Capture,
+        Section::Saving,
+        Section::Shortcuts,
+        Section::Features,
+        Section::Editor,
+        Section::System,
+        Section::About,
+    ];
+
+    fn title(self) -> &'static str {
+        t(match self {
+            Section::General => T::General,
+            Section::Capture => T::SecCapture,
+            Section::Saving => T::SecSaving,
+            Section::Shortcuts => T::Shortcuts,
+            Section::Features => T::Features,
+            Section::Editor => T::Editor,
+            Section::System => T::SecSystem,
+            Section::About => T::SecAbout,
+        })
+    }
+
+    fn subtitle(self) -> &'static str {
+        t(match self {
+            Section::General => T::SubGeneral,
+            Section::Capture => T::SubCapture,
+            Section::Saving => T::SubSaving,
+            Section::Shortcuts => T::ShortcutsHint,
+            Section::Features => T::SubFeatures,
+            Section::Editor => T::EditorHint,
+            Section::System => T::SubSystem,
+            Section::About => T::Description,
+        })
+    }
+
+    /// Sections whose settings can be put back to the defaults in one go.
+    fn resettable(self) -> bool {
+        !matches!(self, Section::System | Section::About)
+    }
+}
+
+/// The extra actions on the editor toolbar, as the Features section lists them.
+pub const FEATURES: [Feature; 7] = [
+    Feature::Recognize,
+    Feature::Scroll,
+    Feature::Record,
+    Feature::Pin,
+    Feature::Search,
+    Feature::Print,
+    Feature::Picker,
+];
+
+/// The drawing tools, as the Editor section shows them.
+pub const TOOLS: [Feature; 12] = [
+    Feature::Pen,
+    Feature::Line,
+    Feature::Arrow,
+    Feature::Rect,
+    Feature::Ellipse,
+    Feature::Marker,
+    Feature::Text,
+    Feature::Number,
+    Feature::Pixelate,
+    Feature::Blur,
+    Feature::Spotlight,
+    Feature::Crop,
+];
+
+const LEVELER: &str = "https://vkardin.github.io/leveler/";
+const VIDEO_GLOW: &str = "https://vkardin.github.io/video-glow/";
+const SOURCE: &str = "https://github.com/vkardin/snapt";
+
+/// Where the update check stands, shown on the About page.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UpdateStatus {
     Idle,
@@ -82,6 +175,8 @@ pub enum UpdateStatus {
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Id {
     Lang(Option<Lang>),
+    LangMenu,
+    Theme(Theme),
     Autostart,
     ReplaceSystem,
     ReplaceMode(ReplaceMode),
@@ -90,24 +185,29 @@ enum Id {
     ResetHotkey(Shortcut),
     ColorFormat(ColorFormat),
     Feature(Feature),
-    Tab(Tab),
+    Section(Section),
+    Search,
+    ClearSearch,
     ChangeFolder,
     OpenFolder,
     Format(Format),
+    FileName,
+    History(usize),
     CopyAs(CopyAs),
     CopyOnSelect,
     WindowOpensEditor,
+    CaptureCursor,
     QuickSave,
     SaveOnCopy,
     OpenAfterSave,
     AutoUpdate,
     CheckUpdates,
     InstallUpdate,
-    Website,
-    LangMenu,
+    Reset(Section),
+    Link(&'static str),
 }
 
-/// A message under the shortcut field.
+/// A message shown in the window after something went wrong.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Notice {
     ShortcutTaken,
@@ -115,30 +215,115 @@ pub enum Notice {
     ReplaceFailed,
 }
 
-const WIDTH: f64 = 400.0;
-/// Windows has one more row, for asking before replacing the Snipping Tool.
-const HEIGHT: f64 = if platform::REPLACE_MODES {
-    HEIGHT_WITH_MODES
-} else {
-    720.0
-};
-const HEIGHT_WITH_MODES: f64 = 760.0;
-const MARGIN: f32 = 20.0;
-/// The height of one settings row, and of the controls in it.
-const ROW: f32 = 40.0;
+/// The text field taking the keyboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Focus {
+    Search,
+    FileName,
+}
+
+const WIDTH: f64 = 700.0;
+const HEIGHT: f64 = 520.0;
+const SIDEBAR: f32 = 200.0;
+/// The page's left and right edges.
+const LEFT: f32 = SIDEBAR + 28.0;
+const RIGHT: f32 = WIDTH as f32 - 28.0;
+/// The title and subtitle above the page stay put while it scrolls.
+const HEADER: f32 = 76.0;
+/// The height of a settings row without a hint, and of the controls in it.
+const ROW: f32 = 44.0;
 const H: f32 = 28.0;
 const MENU_W: f32 = 150.0;
+const HISTORY: [usize; 4] = [0, 5, 10, 20];
 
-const BG: u32 = 0x1C1C1F;
-const LINE: u32 = 0x2C2C32;
-const MENU: u32 = 0x26262B;
-const CONTROL: u32 = 0x2E2E35;
-const CONTROL_HOVER: u32 = 0x3A3A43;
-const TEXT: u32 = 0xF4F4F6;
-const MUTED: u32 = 0x9A9AA3;
-const ACCENT: u32 = 0x8B5CF6;
-const ACCENT_TEXT: u32 = 0xA78BFA;
-const ERROR: u32 = 0xF87171;
+/// The colors of one theme, from the Snapt website.
+#[derive(Debug, Clone, Copy)]
+struct Palette {
+    bg: u32,
+    side: u32,
+    line: u32,
+    control: u32,
+    control_hover: u32,
+    /// The track of a switch that is off.
+    track: u32,
+    text: u32,
+    muted: u32,
+    accent: u32,
+    accent_hover: u32,
+    accent_text: u32,
+    link_hover: u32,
+    /// The selected sidebar item and turned-on tiles.
+    pill: u32,
+    error: u32,
+}
+
+const DARK: Palette = Palette {
+    bg: 0x17132B,
+    side: 0x0F0C1D,
+    line: 0x2A2445,
+    control: 0x231D3D,
+    control_hover: 0x30284F,
+    track: 0x3A3358,
+    text: 0xECE9F7,
+    muted: 0xA49DBD,
+    accent: 0x8B5CF6,
+    accent_hover: 0x9D74F8,
+    accent_text: 0xA78BFA,
+    link_hover: 0xC4B5FD,
+    pill: 0x2B2150,
+    error: 0xF87171,
+};
+
+const LIGHT: Palette = Palette {
+    bg: 0xFFFFFF,
+    side: 0xF6F4FE,
+    line: 0xE6E1F5,
+    control: 0xF1EDFC,
+    control_hover: 0xE5DEFA,
+    track: 0xD6D0E8,
+    text: 0x1C1530,
+    muted: 0x5D5675,
+    accent: 0x7C3AED,
+    accent_hover: 0x6D28D9,
+    accent_text: 0x7C3AED,
+    link_hover: 0x5B21B6,
+    pill: 0xEDE7FD,
+    error: 0xDC2626,
+};
+
+/// Everything a frame shows besides the settings themselves.
+#[derive(Debug, Clone)]
+struct View {
+    section: Section,
+    scroll: f32,
+    recording: Option<Shortcut>,
+    notice: Option<Notice>,
+    menu_open: bool,
+    query: String,
+    focus: Option<Focus>,
+    /// The file name as it is being typed.
+    file_name: Option<String>,
+    /// A section waiting for a second click on its reset link.
+    confirm_reset: Option<Section>,
+    dark: bool,
+}
+
+impl View {
+    fn new() -> Self {
+        Self {
+            section: Section::General,
+            scroll: 0.0,
+            recording: None,
+            notice: None,
+            menu_open: false,
+            query: String::new(),
+            focus: None,
+            file_name: None,
+            confirm_reset: None,
+            dark: true,
+        }
+    }
+}
 
 pub struct SettingsWindow {
     // Declared before the context so the surface drops first.
@@ -148,10 +333,13 @@ pub struct SettingsWindow {
     cursor: (f32, f32),
     hover: Option<Id>,
     modifiers: ModifiersState,
-    /// The shortcut field listening for keys.
-    recording: Option<Shortcut>,
-    menu_open: bool,
-    tab: Tab,
+    view: View,
+    /// The system is in dark mode; followed while the theme is `System`.
+    system_dark: bool,
+    /// The theme last handed to the window's title bar.
+    title_theme: Option<Option<Theme>>,
+    /// How tall the page is, to know how far it scrolls.
+    page_height: f32,
     pub notice: Option<Notice>,
     hits: Vec<(Id, SkRect)>,
 }
@@ -175,6 +363,7 @@ impl SettingsWindow {
         );
         let surface = Surface::new(&context, window.clone())
             .map_err(|e| anyhow::anyhow!("failed to create a drawing surface: {e}"))?;
+        let system_dark = window.theme() != Some(winit::window::Theme::Light);
         Ok(Self {
             surface,
             window,
@@ -182,9 +371,10 @@ impl SettingsWindow {
             cursor: (-1.0, -1.0),
             hover: None,
             modifiers: ModifiersState::empty(),
-            recording: None,
-            menu_open: false,
-            tab: Tab::General,
+            view: View::new(),
+            system_dark,
+            title_theme: None,
+            page_height: 0.0,
             notice: None,
             hits: Vec::new(),
         })
@@ -212,17 +402,21 @@ impl SettingsWindow {
         self.window.request_redraw();
     }
 
-    /// Handles an event; returns what the user changed, if anything.
+    /// Handles an event; returns what the user changed, in order.
     pub fn window_event(
         &mut self,
         event: WindowEvent,
         settings: &Settings,
         update: &UpdateStatus,
-    ) -> Option<Action> {
+    ) -> Vec<Action> {
         match event {
-            WindowEvent::CloseRequested => return Some(self.close()),
+            WindowEvent::CloseRequested => return vec![self.close()],
             WindowEvent::RedrawRequested => self.redraw(settings, update),
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                self.window.request_redraw();
+            }
+            WindowEvent::ThemeChanged(theme) => {
+                self.system_dark = theme != winit::window::Theme::Light;
                 self.window.request_redraw();
             }
             WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
@@ -231,28 +425,51 @@ impl SettingsWindow {
                 self.cursor = (-1.0, -1.0);
                 self.set_hover(None);
             }
-            WindowEvent::Focused(false) if self.recording.is_some() => {
-                self.recording = None;
+            WindowEvent::MouseWheel { delta, .. } => {
+                let dy = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y * 40.0,
+                    MouseScrollDelta::PixelDelta(p) => (p.y / self.window.scale_factor()) as f32,
+                };
+                self.scroll_by(-dy);
+            }
+            WindowEvent::Focused(false) => {
+                let mut actions = self.blur();
+                if self.view.recording.take().is_some() {
+                    actions.push(Action::Recording(false));
+                }
                 self.window.request_redraw();
-                return Some(Action::Recording(false));
+                return actions;
             }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button: MouseButton::Left,
                 ..
             } => return self.click(),
-            WindowEvent::KeyboardInput { event, .. } => return self.key(event),
+            WindowEvent::KeyboardInput { event, .. } => return self.key(event, settings),
             _ => {}
         }
-        None
+        Vec::new()
     }
 
     fn close(&mut self) -> Action {
-        self.recording = None;
-        self.menu_open = false;
+        self.view.recording = None;
+        self.view.menu_open = false;
+        self.view.focus = None;
+        self.view.file_name = None;
+        self.view.confirm_reset = None;
         self.notice = None;
         self.window.set_visible(false);
         Action::Close
+    }
+
+    fn scroll_by(&mut self, dy: f32) {
+        let max = (self.page_height - (HEIGHT as f32 - HEADER)).max(0.0);
+        let scroll = (self.view.scroll + dy).clamp(0.0, max);
+        if scroll != self.view.scroll {
+            self.view.scroll = scroll;
+            self.view.menu_open = false;
+            self.window.request_redraw();
+        }
     }
 
     fn cursor_moved(&mut self, position: PhysicalPosition<f64>) {
@@ -272,41 +489,66 @@ impl SettingsWindow {
     fn set_hover(&mut self, hover: Option<Id>) {
         if hover != self.hover {
             self.hover = hover;
-            let icon = if hover.is_some() {
-                CursorIcon::Pointer
-            } else {
-                CursorIcon::Default
+            let icon = match hover {
+                Some(Id::Search | Id::FileName) => CursorIcon::Text,
+                Some(_) => CursorIcon::Pointer,
+                None => CursorIcon::Default,
             };
             self.window.set_cursor(icon);
             self.window.request_redraw();
         }
     }
 
-    fn click(&mut self) -> Option<Action> {
+    /// Lets go of the text field; a typed file name is applied.
+    fn blur(&mut self) -> Vec<Action> {
+        let focus = self.view.focus.take();
+        match self.view.file_name.take() {
+            Some(name) if focus == Some(Focus::FileName) => vec![Action::FileName(name)],
+            _ => Vec::new(),
+        }
+    }
+
+    fn click(&mut self) -> Vec<Action> {
         let hover = self.hover;
-        if std::mem::take(&mut self.menu_open) {
+        self.window.request_redraw();
+        if std::mem::take(&mut self.view.menu_open) {
             // A click while the language list is open picks a language or just closes it.
-            self.window.request_redraw();
-            return match hover? {
-                Id::Lang(lang) => Some(Action::Language(lang)),
-                _ => None,
+            return match hover {
+                Some(Id::Lang(lang)) => vec![Action::Language(lang)],
+                _ => Vec::new(),
             };
         }
-        let id = hover?;
-        self.window.request_redraw();
-        if !matches!(id, Id::Hotkey(_)) {
-            self.recording = None;
+        let keeps_focus = match self.view.focus {
+            Some(Focus::Search) => matches!(hover, Some(Id::Search | Id::ClearSearch)),
+            Some(Focus::FileName) => hover == Some(Id::FileName),
+            None => true,
+        };
+        let mut actions = if keeps_focus { Vec::new() } else { self.blur() };
+        if !matches!(hover, Some(Id::Reset(_))) {
+            self.view.confirm_reset = None;
         }
-        Some(match id {
+        let Some(id) = hover else {
+            return actions;
+        };
+        if !matches!(id, Id::Hotkey(_)) && self.view.recording.take().is_some() {
+            actions.push(Action::Recording(false));
+        }
+        let action = match id {
             Id::Lang(lang) => Action::Language(lang),
+            Id::LangMenu => {
+                self.view.menu_open = true;
+                return actions;
+            }
+            Id::Theme(theme) => Action::Theme(theme),
             Id::Autostart => Action::Autostart,
             Id::ReplaceSystem => Action::ReplaceSystem,
             Id::ReplaceMode(mode) => Action::ReplaceMode(mode),
             Id::RestoreSystem => Action::RestoreSystem,
             Id::Hotkey(which) => {
-                self.recording = (self.recording != Some(which)).then_some(which);
+                let listening = self.view.recording != Some(which);
+                self.view.recording = listening.then_some(which);
                 self.notice = None;
-                Action::Recording(self.recording.is_some())
+                Action::Recording(listening)
             }
             Id::ResetHotkey(which) => {
                 self.notice = None;
@@ -314,52 +556,159 @@ impl SettingsWindow {
             }
             Id::ColorFormat(f) => Action::ColorFormat(f),
             Id::Feature(f) => Action::Feature(f),
-            Id::Tab(tab) => {
-                self.tab = tab;
-                if self.recording.take().is_some() {
-                    return Some(Action::Recording(false));
+            Id::Section(section) => {
+                self.view.section = section;
+                self.view.scroll = 0.0;
+                self.view.query.clear();
+                return actions;
+            }
+            Id::Search => {
+                self.view.focus = Some(Focus::Search);
+                return actions;
+            }
+            Id::ClearSearch => {
+                self.view.query.clear();
+                self.view.scroll = 0.0;
+                return actions;
+            }
+            Id::FileName => {
+                if self.view.focus != Some(Focus::FileName) {
+                    self.view.focus = Some(Focus::FileName);
+                    self.view.file_name = None;
                 }
-                return None;
+                return actions;
             }
             Id::ChangeFolder => Action::ChangeFolder,
             Id::OpenFolder => Action::OpenFolder,
             Id::Format(f) => Action::Format(f),
+            Id::History(n) => Action::History(n),
             Id::CopyAs(c) => Action::CopyAs(c),
             Id::CopyOnSelect => Action::CopyOnSelect,
             Id::WindowOpensEditor => Action::WindowOpensEditor,
+            Id::CaptureCursor => Action::CaptureCursor,
             Id::QuickSave => Action::QuickSave,
             Id::SaveOnCopy => Action::SaveOnCopy,
             Id::OpenAfterSave => Action::OpenAfterSave,
             Id::AutoUpdate => Action::AutoUpdate,
             Id::CheckUpdates => Action::CheckUpdates,
             Id::InstallUpdate => Action::InstallUpdate,
-            Id::Website => Action::Website,
-            Id::LangMenu => {
-                self.menu_open = true;
-                return None;
+            Id::Reset(section) => {
+                if self.view.confirm_reset.take() != Some(section) {
+                    self.view.confirm_reset = Some(section);
+                    return actions;
+                }
+                self.notice = None;
+                Action::Reset(section)
             }
-        })
+            Id::Link(url) => Action::Link(url),
+        };
+        actions.push(action);
+        actions
     }
 
-    fn key(&mut self, event: KeyEvent) -> Option<Action> {
+    fn key(&mut self, event: KeyEvent, settings: &Settings) -> Vec<Action> {
         if event.state != ElementState::Pressed {
-            return None;
+            return Vec::new();
         }
         let PhysicalKey::Code(code) = event.physical_key else {
-            return None;
+            return Vec::new();
         };
-        let Some(which) = self.recording else {
-            if code == KeyCode::Escape && self.menu_open {
-                self.menu_open = false;
+        if let Some(which) = self.view.recording {
+            return self.record(which, code);
+        }
+        if self.view.menu_open {
+            if code == KeyCode::Escape {
+                self.view.menu_open = false;
                 self.window.request_redraw();
-                return None;
             }
-            return matches!(code, KeyCode::Escape).then(|| self.close());
+            return Vec::new();
+        }
+        let command = self.modifiers.control_key() || self.modifiers.super_key();
+        let typed: String = event
+            .text
+            .as_deref()
+            .unwrap_or_default()
+            .chars()
+            .filter(|c| !c.is_control())
+            .collect();
+        match self.view.focus {
+            None => {
+                match code {
+                    KeyCode::Escape => return vec![self.close()],
+                    KeyCode::PageDown => self.scroll_by(HEIGHT as f32 - HEADER - 40.0),
+                    KeyCode::PageUp => self.scroll_by(-(HEIGHT as f32 - HEADER - 40.0)),
+                    KeyCode::ArrowDown => self.scroll_by(40.0),
+                    KeyCode::ArrowUp => self.scroll_by(-40.0),
+                    KeyCode::Home => self.scroll_by(-self.page_height),
+                    KeyCode::End => self.scroll_by(self.page_height),
+                    // Typing anywhere starts a search.
+                    _ if !typed.trim().is_empty() && !command && !self.modifiers.alt_key() => {
+                        self.view.focus = Some(Focus::Search);
+                        self.view.query.push_str(&typed);
+                        self.view.scroll = 0.0;
+                        self.window.request_redraw();
+                    }
+                    _ => {}
+                }
+                Vec::new()
+            }
+            Some(focus) => self.edit(focus, code, &typed, command, &settings.file_name),
+        }
+    }
+
+    /// Types into the focused text field.
+    fn edit(
+        &mut self,
+        focus: Focus,
+        code: KeyCode,
+        typed: &str,
+        command: bool,
+        file_name: &str,
+    ) -> Vec<Action> {
+        self.window.request_redraw();
+        if focus == Focus::FileName && self.view.file_name.is_none() {
+            self.view.file_name = Some(file_name.to_string());
+        }
+        let text = match focus {
+            Focus::Search => &mut self.view.query,
+            Focus::FileName => self.view.file_name.get_or_insert_with(String::new),
         };
+        match code {
+            KeyCode::Escape => {
+                if focus == Focus::Search && !text.is_empty() {
+                    text.clear();
+                } else {
+                    self.view.focus = None;
+                    self.view.file_name = None;
+                }
+            }
+            KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Tab => return self.blur(),
+            KeyCode::Backspace if command => text.clear(),
+            KeyCode::Backspace => {
+                text.pop();
+            }
+            KeyCode::KeyV if command => {
+                let pasted = arboard::Clipboard::new()
+                    .and_then(|mut c| c.get_text())
+                    .unwrap_or_default();
+                text.extend(pasted.chars().filter(|c| !c.is_control()));
+            }
+            KeyCode::KeyA | KeyCode::KeyX if command => text.clear(),
+            _ if !command && !typed.is_empty() => text.push_str(typed),
+            _ => {}
+        }
+        if focus == Focus::Search {
+            self.view.scroll = 0.0;
+        }
+        Vec::new()
+    }
+
+    /// Turns a key press into the shortcut being recorded.
+    fn record(&mut self, which: Shortcut, code: KeyCode) -> Vec<Action> {
         if code == KeyCode::Escape {
-            self.recording = None;
+            self.view.recording = None;
             self.window.request_redraw();
-            return Some(Action::Recording(false));
+            return vec![Action::Recording(false)];
         }
         // Wait for the key that comes with the modifiers.
         let modifier_only = matches!(
@@ -374,25 +723,37 @@ impl SettingsWindow {
                 | KeyCode::SuperRight
         );
         if modifier_only {
-            return None;
+            return Vec::new();
         }
-        self.recording = None;
+        self.view.recording = None;
         self.window.request_redraw();
         // Backspace or Delete alone clears the shortcut; capture always keeps one.
         let clear = matches!(code, KeyCode::Backspace | KeyCode::Delete);
         if clear && self.modifiers.is_empty() && which != Shortcut::Capture {
-            return Some(Action::Hotkey(which, String::new()));
+            return vec![Action::Hotkey(which, String::new())];
         }
         match hotkey_from(self.modifiers, code) {
-            Some(hotkey) => Some(Action::Hotkey(which, hotkey)),
+            Some(hotkey) => vec![Action::Hotkey(which, hotkey)],
             None => {
                 self.notice = Some(Notice::ShortcutInvalid);
-                Some(Action::Recording(false))
+                vec![Action::Recording(false)]
             }
         }
     }
 
     fn redraw(&mut self, settings: &Settings, update: &UpdateStatus) {
+        // The title bar follows the theme where the system lets it.
+        let wanted = match settings.theme {
+            Theme::System => None,
+            theme => Some(theme),
+        };
+        if self.title_theme != Some(wanted) {
+            self.title_theme = Some(wanted);
+            self.window.set_theme(wanted.map(|theme| match theme {
+                Theme::Light => winit::window::Theme::Light,
+                _ => winit::window::Theme::Dark,
+            }));
+        }
         let size = self.window.inner_size();
         let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
             return;
@@ -404,28 +765,22 @@ impl SettingsWindow {
         let Some(mut pixmap) = Pixmap::new(size.width, size.height) else {
             return;
         };
-        let scale = self.window.scale_factor() as f32;
-        let mut ui = Ui {
-            pixmap: &mut pixmap,
-            scale,
-            hover: self.hover,
-            hits: Vec::new(),
+        self.view.dark = match settings.theme {
+            Theme::System => self.system_dark,
+            Theme::Light => false,
+            Theme::Dark => true,
         };
-        ui.fill(
-            SkRect::from_xywh(0.0, 0.0, WIDTH as f32, HEIGHT as f32),
-            0.0,
-            BG,
-        );
-        build(
-            &mut ui,
-            settings,
-            update,
-            self.tab,
-            self.recording,
-            self.notice,
-            self.menu_open,
-        );
+        self.view.notice = self.notice;
+        let scale = self.window.scale_factor() as f32;
+        let mut ui = Ui::new(&mut pixmap, scale, self.hover, self.view.dark);
+        self.page_height = build(&mut ui, settings, update, &self.view);
         self.hits = ui.hits;
+        // A page that got shorter, e.g. while searching, can't stay scrolled past its end.
+        let max = (self.page_height - (HEIGHT as f32 - HEADER)).max(0.0);
+        if self.view.scroll > max {
+            self.view.scroll = max;
+            self.window.request_redraw();
+        }
 
         let mut buffer = match self.surface.buffer_mut() {
             Ok(buffer) => buffer,
@@ -489,353 +844,933 @@ fn hotkey_from(modifiers: ModifiersState, code: KeyCode) -> Option<String> {
         .then_some(hotkey)
 }
 
-/// Lays out and draws the whole window. Units are logical pixels.
-fn build(
-    ui: &mut Ui,
-    settings: &Settings,
-    update: &UpdateStatus,
-    tab: Tab,
-    recording: Option<Shortcut>,
-    notice: Option<Notice>,
-    menu_open: bool,
-) {
-    let left = MARGIN;
-    let right = WIDTH as f32 - MARGIN;
-    let mut y = 12.0;
+/// Lays out and draws the whole window; returns how tall the page is.
+/// Units are logical pixels.
+fn build(ui: &mut Ui, settings: &Settings, update: &UpdateStatus, view: &View) -> f32 {
+    let p = ui.p;
+    ui.fill(
+        SkRect::from_xywh(0.0, 0.0, WIDTH as f32, HEIGHT as f32),
+        0.0,
+        p.bg,
+    );
 
-    // The page tabs
-    let tabs = [
-        (Tab::General, t(T::General)),
-        (Tab::Shortcuts, t(T::Shortcuts)),
-        (Tab::Features, t(T::Features)),
-        (Tab::Editor, t(T::Editor)),
-    ];
-    let seg_w = (right - left) / tabs.len() as f32;
-    for (i, (id, name)) in tabs.iter().enumerate() {
-        let x = left + i as f32 * seg_w;
-        let last = i == tabs.len() - 1;
-        ui.segment(Id::Tab(*id), name, x, y, seg_w, tab == *id, i == 0, last);
-    }
-    y += H + 6.0;
-    y = ui.divider(y);
-
-    let (menu_x, menu_y) = (right - MENU_W, y + 6.0);
-    let menu_open = menu_open && tab == Tab::General;
-    match tab {
-        Tab::General => {
-            y = general(ui, settings, notice, menu_open, platform::REPLACE_MODES, y);
-        }
-        Tab::Shortcuts => y = shortcuts(ui, settings, recording, notice, y),
-        Tab::Features => {
-            for (feature, name) in [
-                (Feature::Recognize, t(T::Recognize)),
-                (Feature::Scroll, t(T::Scroll)),
-                (Feature::Record, t(T::Record)),
-                (Feature::Pin, t(T::Pin)),
-                (Feature::Search, t(T::Search)),
-                (Feature::Print, t(T::Print)),
-                (Feature::Picker, t(T::PickColor)),
-            ] {
-                let on = settings.is_enabled(feature);
-                ui.switch(Id::Feature(feature), name, y, on);
-                y += ROW;
+    // The page first: the header and the sidebar are drawn over what scrolls away.
+    let top = HEADER - view.scroll;
+    let query = view.query.trim().to_lowercase();
+    let mut y = top;
+    if query.is_empty() {
+        let mut page = Page::new(ui, y, None, None);
+        section(&mut page, view.section, settings, update, view);
+        y = page.y;
+        if view.section.resettable() {
+            let confirm = view.confirm_reset == Some(view.section);
+            let text = t(if confirm {
+                T::ResetConfirm
+            } else {
+                T::ResetSection
+            });
+            let w = font::measure(text, 12.0).0;
+            // Rows end in a line of their own; the tiles don't.
+            if view.section == Section::Editor {
+                ui.divider(y + 4.0);
             }
+            ui.link(
+                Id::Reset(view.section),
+                text,
+                RIGHT - w,
+                y + 22.0,
+                12.0,
+                confirm,
+            );
+            y += 48.0;
         }
-        Tab::Editor => y = editor(ui, settings, y),
+    } else {
+        let mut found = false;
+        for s in Section::ALL {
+            let mut page = Page::new(ui, y, Some(query.clone()), Some(s));
+            section(&mut page, s, settings, update, view);
+            found |= page.shown > 0;
+            y = page.y;
+        }
+        if !found {
+            ui.label(t(T::NothingFound), LEFT, y + 8.0, 13.0, p.muted);
+            y += 40.0;
+        }
     }
-    debug_assert!(y <= HEIGHT as f32 - 52.0, "the page runs into the footer");
-    let y = ui.divider(HEIGHT as f32 - 53.0);
+    let height = y + 16.0 - top;
+    // Nothing under the header can be clicked.
+    ui.hits.retain(|(_, r)| r.bottom() > HEADER + 1.0);
+    for (_, r) in &mut ui.hits {
+        if r.top() < HEADER {
+            *r = SkRect::from_ltrb(r.left(), HEADER, r.right(), r.bottom()).unwrap_or(*r);
+        }
+    }
 
-    // Footer: version, update status and links
-    let (status, color) = match update {
-        UpdateStatus::Idle => (format!("Snapt {}", env!("CARGO_PKG_VERSION")), MUTED),
-        UpdateStatus::Checking => (t(T::Checking).into(), MUTED),
-        UpdateStatus::UpToDate => (t(T::UpToDate).into(), MUTED),
-        UpdateStatus::Available(v) => (t(T::UpdateAvailable).replace("{}", v), TEXT),
-        UpdateStatus::Downloading => (t(T::Downloading).into(), MUTED),
-        UpdateStatus::Failed => (t(T::UpdateFailed).into(), ERROR),
+    // Header
+    ui.fill(
+        SkRect::from_xywh(SIDEBAR, 0.0, WIDTH as f32 - SIDEBAR, HEADER),
+        0.0,
+        p.bg,
+    );
+    let (title, subtitle) = if query.is_empty() {
+        (view.section.title(), view.section.subtitle())
+    } else {
+        (t(T::SearchSettings), "")
     };
-    ui.label(&status, left, y + 9.0, 12.0, color);
-    let site_w = font::measure(t(T::Website), 12.0).0;
-    let mut x = right - site_w;
-    ui.link(Id::Website, t(T::Website), x, y + 9.0, 12.0);
-    match update {
-        UpdateStatus::Available(_) => {
-            let w = font::measure(t(T::InstallUpdate), 12.0).0 + 24.0;
-            x -= w + 14.0;
-            ui.button(Id::InstallUpdate, t(T::InstallUpdate), x, y + 2.0, true);
-        }
-        UpdateStatus::Checking | UpdateStatus::Downloading => {}
-        _ => {
-            x -= font::measure(t(T::CheckNow), 12.0).0 + 14.0;
-            ui.link(Id::CheckUpdates, t(T::CheckNow), x, y + 9.0, 12.0);
-        }
+    ui.label(title, LEFT, 20.0, 19.0, p.text);
+    let subtitle = elide_end(subtitle, 12.0, RIGHT - LEFT);
+    ui.label(&subtitle, LEFT, 48.0, 12.0, p.muted);
+    if view.scroll > 0.0 {
+        ui.fill(
+            SkRect::from_xywh(SIDEBAR, HEADER - 1.0, WIDTH as f32 - SIDEBAR, 1.0),
+            0.0,
+            p.line,
+        );
     }
+
+    // Scrollbar
+    let visible = HEIGHT as f32 - HEADER;
+    if height > visible {
+        let track = visible - 12.0;
+        let thumb = (track * visible / height).max(30.0);
+        let at = HEADER + 6.0 + (track - thumb) * view.scroll / (height - visible);
+        ui.fill(
+            SkRect::from_xywh(WIDTH as f32 - 9.0, at, 4.0, thumb),
+            2.0,
+            p.track,
+        );
+    }
+
+    sidebar(ui, view, query.is_empty());
 
     // The open language list goes over everything, and takes clicks first.
-    if menu_open {
+    if view.menu_open
+        && let Some(anchor) = ui.anchor
+    {
         let mut options = vec![(t(T::SystemLanguage), None)];
         options.extend(Lang::ALL.iter().map(|l| (l.name(), Some(*l))));
-        let top = menu_y + 32.0;
         let item_h = 28.0;
         let h = item_h * options.len() as f32 + 8.0;
+        let (x, top) = (anchor.left(), anchor.bottom() + 4.0);
         let mut hits = std::mem::take(&mut ui.hits);
         ui.fill(
-            SkRect::from_xywh(menu_x - 1.0, top - 1.0, MENU_W + 2.0, h + 2.0),
+            SkRect::from_xywh(x - 1.0, top - 1.0, MENU_W + 2.0, h + 2.0),
             7.0,
-            LINE,
+            p.line,
         );
-        ui.fill(SkRect::from_xywh(menu_x, top, MENU_W, h), 6.0, MENU);
+        ui.fill(SkRect::from_xywh(x, top, MENU_W, h), 6.0, p.side);
         for (i, (name, lang)) in options.iter().enumerate() {
             let iy = top + 4.0 + i as f32 * item_h;
-            let hovered = ui.hit(Id::Lang(*lang), menu_x + 4.0, iy, MENU_W - 8.0, item_h);
+            let hovered = ui.hit(Id::Lang(*lang), x + 4.0, iy, MENU_W - 8.0, item_h);
             if hovered {
                 ui.fill(
-                    SkRect::from_xywh(menu_x + 4.0, iy, MENU_W - 8.0, item_h),
+                    SkRect::from_xywh(x + 4.0, iy, MENU_W - 8.0, item_h),
                     4.0,
-                    CONTROL_HOVER,
+                    p.control_hover,
                 );
             }
             let color = if settings.language == *lang {
-                ACCENT_TEXT
+                p.accent_text
             } else {
-                TEXT
+                p.text
             };
-            ui.label(name, menu_x + 12.0, iy + 7.0, 13.0, color);
+            ui.label(name, x + 12.0, iy + 7.0, 13.0, color);
         }
         // Anywhere else closes the list.
         ui.hits.append(&mut hits);
     }
+    height
 }
 
-/// The editor page: a switch per drawing tool; returns where it ends.
-fn editor(ui: &mut Ui, settings: &Settings, mut y: f32) -> f32 {
-    let (left, right) = (MARGIN, WIDTH as f32 - MARGIN);
-    for (feature, name) in [
-        (Feature::Pen, t(T::Pen)),
-        (Feature::Line, t(T::Line)),
-        (Feature::Arrow, t(T::Arrow)),
-        (Feature::Rect, t(T::Rectangle)),
-        (Feature::Ellipse, t(T::Ellipse)),
-        (Feature::Marker, t(T::Marker)),
-        (Feature::Text, t(T::Text)),
-        (Feature::Number, t(T::Number)),
-        (Feature::Pixelate, t(T::Pixelate)),
-        (Feature::Blur, t(T::Blur)),
-        (Feature::Spotlight, t(T::Spotlight)),
-        (Feature::Crop, t(T::Crop)),
-    ] {
-        ui.switch(Id::Feature(feature), name, y, settings.is_enabled(feature));
-        y += ROW;
-    }
-    ui.wrapped(t(T::EditorHint), left, y + 4.0, right - left, 12.0, MUTED);
-    y + 34.0
-}
-
-/// The general page; returns where it ends.
-fn general(
-    ui: &mut Ui,
-    settings: &Settings,
-    notice: Option<Notice>,
-    menu_open: bool,
-    replace_modes: bool,
-    mut y: f32,
-) -> f32 {
-    let left = MARGIN;
-    let right = WIDTH as f32 - MARGIN;
-    // Language, start at login, updates
-    ui.label(t(T::Language), left, y + 12.0, 13.0, TEXT);
-    let lang_name = match settings.language {
-        Some(lang) => lang.name(),
-        None => t(T::SystemLanguage),
-    };
-    let menu_x = right - MENU_W;
-    let menu_y = y + 6.0;
-    ui.select(Id::LangMenu, lang_name, menu_x, menu_y, MENU_W, menu_open);
-    y += ROW;
-    ui.switch(Id::Autostart, t(T::StartAtLogin), y, settings.autostart);
-    y += ROW;
-    ui.switch(Id::AutoUpdate, t(T::AutoUpdate), y, settings.auto_update);
-    y += ROW;
-    y = ui.divider(y);
-
-    ui.label(t(T::ColorFormat), left, y + 12.0, 13.0, TEXT);
-    let seg_w = 60.0;
-    let mut x = right - 2.0 * seg_w;
-    for (i, (name, format)) in [("HEX", ColorFormat::Hex), ("RGB", ColorFormat::Rgb)]
-        .iter()
-        .enumerate()
-    {
-        let selected = settings.color_format == *format;
-        let id = Id::ColorFormat(*format);
-        ui.segment(id, name, x, y + 6.0, seg_w, selected, i == 0, i == 1);
-        x += seg_w;
-    }
-    y += ROW;
-    ui.switch(
-        Id::ReplaceSystem,
-        t(T::ReplaceSystem),
-        y,
-        settings.replace_system.is_on(),
+/// The sidebar: logo, search and the sections.
+fn sidebar(ui: &mut Ui, view: &View, browsing: bool) {
+    let p = ui.p;
+    ui.fill(
+        SkRect::from_xywh(0.0, 0.0, SIDEBAR, HEIGHT as f32),
+        0.0,
+        p.side,
     );
-    y += ROW;
+    ui.fill(
+        SkRect::from_xywh(SIDEBAR - 1.0, 0.0, 1.0, HEIGHT as f32),
+        0.0,
+        p.line,
+    );
+    ui.logo(18.0, 16.0, 26.0);
+    ui.label("Snapt", 52.0, 20.0, 17.0, p.text);
+
+    // Search
+    let (x, y, w) = (14.0, 56.0, SIDEBAR - 28.0);
+    let focused = view.focus == Some(Focus::Search);
+    let hovered = ui.hit(Id::Search, x, y, w, 30.0);
+    if focused {
+        ui.fill(
+            SkRect::from_xywh(x - 1.5, y - 1.5, w + 3.0, 33.0),
+            8.0,
+            p.accent,
+        );
+    }
+    let color = if hovered && !focused {
+        p.control_hover
+    } else {
+        p.control
+    };
+    ui.fill(SkRect::from_xywh(x, y, w, 30.0), 7.0, color);
+    ui.glyph(Glyph::Search, x + 9.0, y + 7.0, 16.0, p.muted);
+    if view.query.is_empty() {
+        ui.label(t(T::SearchSettings), x + 32.0, y + 8.0, 12.0, p.muted);
+        if focused {
+            ui.caret(x + 32.0, y + 7.0);
+        }
+    } else {
+        let text = elide_start(&view.query, 12.0, w - 58.0);
+        ui.label(&text, x + 32.0, y + 8.0, 12.0, p.text);
+        if focused {
+            ui.caret(x + 33.0 + font::measure(&text, 12.0).0, y + 7.0);
+        }
+        let hovered = ui.hit(Id::ClearSearch, x + w - 26.0, y + 3.0, 24.0, 24.0);
+        let color = if hovered { p.text } else { p.muted };
+        ui.glyph(Glyph::Clear, x + w - 21.0, y + 8.0, 14.0, color);
+    }
+
+    // Sections
+    let mut y = 100.0;
+    for s in Section::ALL {
+        if s == Section::About {
+            y = HEIGHT as f32 - 14.0 - 34.0;
+            ui.fill(
+                SkRect::from_xywh(14.0, y - 8.0, SIDEBAR - 28.0, 1.0),
+                0.0,
+                p.line,
+            );
+        }
+        let selected = browsing && view.section == s;
+        let hovered = ui.hit(Id::Section(s), 10.0, y, SIDEBAR - 20.0, 34.0);
+        if selected {
+            ui.fill(
+                SkRect::from_xywh(10.0, y, SIDEBAR - 20.0, 34.0),
+                8.0,
+                p.pill,
+            );
+        } else if hovered {
+            ui.fill(
+                SkRect::from_xywh(10.0, y, SIDEBAR - 20.0, 34.0),
+                8.0,
+                p.control,
+            );
+        }
+        let ink = if selected { p.accent_text } else { p.muted };
+        ui.section_icon(s, 22.0, y + 9.0, ink);
+        ui.label(s.title(), 50.0, y + 10.0, 13.0, p.text);
+        y += 36.0;
+    }
+}
+
+/// Draws the rows of `section`.
+fn section(page: &mut Page, s: Section, settings: &Settings, update: &UpdateStatus, view: &View) {
+    match s {
+        Section::General => general(page, settings, view),
+        Section::Capture => capture(page, settings),
+        Section::Saving => saving(page, settings, view),
+        Section::Shortcuts => shortcuts(page, settings, view),
+        Section::Features => features(page, settings),
+        Section::Editor => editor(page, settings),
+        Section::System => system(page, settings, view, platform::REPLACE_MODES),
+        Section::About => about(page, settings, update),
+    }
+}
+
+fn general(page: &mut Page, settings: &Settings, view: &View) {
+    if page.matches(&[t(T::Language), "language", "язык", "мова"]) {
+        let name = match settings.language {
+            Some(lang) => lang.name(),
+            None => t(T::SystemLanguage),
+        };
+        let y = page.row(t(T::Language), None);
+        let x = RIGHT - MENU_W;
+        page.ui
+            .select(Id::LangMenu, name, x, y + 8.0, MENU_W, view.menu_open);
+        page.ui.anchor = SkRect::from_xywh(x, y + 8.0, MENU_W, H);
+    }
+    page.choice(
+        t(T::Theme),
+        None,
+        &[
+            (
+                t(T::ThemeSystem),
+                Id::Theme(Theme::System),
+                settings.theme == Theme::System,
+            ),
+            (
+                t(T::ThemeLight),
+                Id::Theme(Theme::Light),
+                settings.theme == Theme::Light,
+            ),
+            (
+                t(T::ThemeDark),
+                Id::Theme(Theme::Dark),
+                settings.theme == Theme::Dark,
+            ),
+        ],
+    );
+    page.switch(
+        Id::Autostart,
+        t(T::StartAtLogin),
+        None,
+        settings.autostart,
+        true,
+    );
+}
+
+fn capture(page: &mut Page, settings: &Settings) {
+    let on = settings.copy_on_select;
+    page.switch(
+        Id::CopyOnSelect,
+        t(T::CopyOnSelect),
+        Some(t(T::HintCopyOnSelect)),
+        on,
+        true,
+    );
+    // Only matters while copying on select is on.
+    let editor = settings.window_opens_editor;
+    let hint = Some(t(T::HintWindowOpensEditor));
+    page.switch(
+        Id::WindowOpensEditor,
+        t(T::WindowOpensEditor),
+        hint,
+        editor,
+        on,
+    );
+    let hint = Some(t(T::HintCaptureCursor));
+    let pointer = settings.capture_cursor;
+    page.switch(Id::CaptureCursor, t(T::CaptureCursor), hint, pointer, true);
+    page.choice(
+        t(T::ColorFormat),
+        Some(t(T::HintColorFormat)),
+        &[
+            (
+                "HEX",
+                Id::ColorFormat(ColorFormat::Hex),
+                settings.color_format == ColorFormat::Hex,
+            ),
+            (
+                "RGB",
+                Id::ColorFormat(ColorFormat::Rgb),
+                settings.color_format == ColorFormat::Rgb,
+            ),
+        ],
+    );
+}
+
+fn saving(page: &mut Page, settings: &Settings, view: &View) {
+    page.group(t(T::Save));
+    if page.matches(&[t(T::Folder)]) {
+        let y = page.row(t(T::Folder), None);
+        let open_w = font::measure(t(T::Open), 12.0).0 + 20.0;
+        let path_w = 230.0;
+        let path_x = RIGHT - open_w - 6.0 - path_w;
+        let path = elide_start(&settings.folder.display().to_string(), 12.0, path_w - 20.0);
+        page.ui
+            .field_left(Id::ChangeFolder, &path, path_x, y + 8.0, path_w);
+        page.ui
+            .button(Id::OpenFolder, t(T::Open), RIGHT - open_w, y + 8.0, false);
+    }
+    page.choice(
+        t(T::Format),
+        None,
+        &[
+            (
+                "PNG",
+                Id::Format(Format::Png),
+                settings.format == Format::Png,
+            ),
+            (
+                "JPEG",
+                Id::Format(Format::Jpeg),
+                settings.format == Format::Jpeg,
+            ),
+        ],
+    );
+    if page.matches(&[t(T::FileName), t(T::HintFileName)]) {
+        let focused = view.focus == Some(Focus::FileName);
+        let typed = view.file_name.as_deref().filter(|_| focused);
+        let template = typed.unwrap_or(&settings.file_name);
+        let example = crate::output::file_name(chrono::Local::now(), template, settings.format);
+        let hint = format!(
+            "{}\n{}",
+            t(T::Example).replace("{}", &example),
+            t(T::HintFileName)
+        );
+        let y = page.row(t(T::FileName), Some(&hint));
+        let w = 230.0;
+        page.ui
+            .text_field(Id::FileName, template, RIGHT - w, y + 8.0, w, focused);
+    }
+    let hint = Some(t(T::HintQuickSave));
+    page.switch(
+        Id::QuickSave,
+        t(T::QuickSave),
+        hint,
+        settings.quick_save,
+        true,
+    );
+    let hint = Some(t(T::HintSaveOnCopy));
+    page.switch(
+        Id::SaveOnCopy,
+        t(T::SaveOnCopy),
+        hint,
+        settings.save_on_copy,
+        true,
+    );
+    let open = settings.open_after_save;
+    page.switch(Id::OpenAfterSave, t(T::OpenAfterSave), None, open, true);
+
+    page.group(t(T::Copy));
+    page.choice(
+        t(T::CopyAs),
+        Some(t(T::HintCopyAs)),
+        &[
+            (
+                t(T::CopyImage),
+                Id::CopyAs(CopyAs::Image),
+                settings.copy_as == CopyAs::Image,
+            ),
+            (
+                t(T::CopyFile),
+                Id::CopyAs(CopyAs::File),
+                settings.copy_as == CopyAs::File,
+            ),
+        ],
+    );
+    let names = ["", "5", "10", "20"];
+    let choices: Vec<(&str, Id, bool)> = HISTORY
+        .iter()
+        .zip(names)
+        .map(|(n, name)| {
+            let name = if *n == 0 { t(T::Off) } else { name };
+            (name, Id::History(*n), settings.history == *n)
+        })
+        .collect();
+    page.choice(t(T::HistoryLimit), None, &choices);
+}
+
+fn shortcuts(page: &mut Page, settings: &Settings, view: &View) {
+    for global in [true, false] {
+        page.group(t(if global {
+            T::GroupAnywhere
+        } else {
+            T::GroupInEditor
+        }));
+        for which in Shortcut::ALL
+            .into_iter()
+            .filter(|w| w.is_global() == global)
+        {
+            let label = shortcut_label(which);
+            let keys = settings.shortcut(which);
+            if !page.matches(&[label, keys]) {
+                continue;
+            }
+            let y = page.row(label, None);
+            let active = view.recording == Some(which);
+            let field = if active {
+                t(T::PressShortcut).to_string()
+            } else if keys.is_empty() {
+                "—".to_string()
+            } else {
+                hotkey_label(keys)
+            };
+            let field_w = 150.0;
+            let x = RIGHT - field_w;
+            page.ui
+                .field(Id::Hotkey(which), &field, x, y + 8.0, field_w, active);
+            if keys != which.default_keys() && !active {
+                let w = font::measure(t(T::Reset), 12.0).0;
+                let x = x - 12.0 - w;
+                page.ui.link(
+                    Id::ResetHotkey(which),
+                    t(T::Reset),
+                    x,
+                    y + 15.0,
+                    12.0,
+                    false,
+                );
+            }
+        }
+    }
+    let message = match view.notice {
+        Some(Notice::ShortcutTaken) => Some(t(T::ShortcutTaken)),
+        Some(Notice::ShortcutInvalid) => Some(t(T::ShortcutInvalid)),
+        _ => None,
+    };
+    if let Some(message) = message
+        && !page.searching()
+    {
+        let p = page.ui.p;
+        page.y += page
+            .ui
+            .wrapped(message, LEFT, page.y + 6.0, RIGHT - LEFT, 12.0, p.error)
+            + 12.0;
+    }
+}
+
+fn shortcut_label(which: Shortcut) -> &'static str {
+    t(match which {
+        Shortcut::Capture => T::TakeScreenshot,
+        Shortcut::Pick => T::PickColor,
+        Shortcut::FullScreen => T::FullScreen,
+        Shortcut::RepeatArea => T::RepeatArea,
+        Shortcut::PinLast => T::PinLast,
+        Shortcut::ScrollPage => T::ScrollPage,
+        Shortcut::Recognize => T::Recognize,
+        Shortcut::Scroll => T::Scroll,
+        Shortcut::Record => T::Record,
+        Shortcut::Pin => T::Pin,
+        Shortcut::Copy => T::Copy,
+        Shortcut::Save => T::Save,
+    })
+}
+
+/// The name, toolbar icon and hint of an extra action.
+fn feature_info(feature: Feature) -> (&'static str, Button, &'static str) {
+    let (name, button, hint) = match feature {
+        Feature::Recognize => (T::Recognize, Button::Recognize, T::HintRecognize),
+        Feature::Scroll => (T::Scroll, Button::Scroll, T::HintScroll),
+        Feature::Record => (T::Record, Button::Record, T::HintRecord),
+        Feature::Pin => (T::Pin, Button::Pin, T::HintPin),
+        Feature::Search => (T::Search, Button::Search, T::HintSearch),
+        Feature::Print => (T::Print, Button::Print, T::HintPrint),
+        _ => (T::PickColor, Button::Eyedropper, T::HintPicker),
+    };
+    (t(name), button, t(hint))
+}
+
+/// The name and toolbar icon of a drawing tool.
+fn tool_info(feature: Feature) -> (&'static str, Button) {
+    let (name, button) = match feature {
+        Feature::Pen => (T::Pen, Button::Tool(Tool::Pen)),
+        Feature::Line => (T::Line, Button::Tool(Tool::Line)),
+        Feature::Arrow => (T::Arrow, Button::Tool(Tool::Arrow)),
+        Feature::Rect => (T::Rectangle, Button::Tool(Tool::Rect)),
+        Feature::Ellipse => (T::Ellipse, Button::Tool(Tool::Ellipse)),
+        Feature::Marker => (T::Marker, Button::Tool(Tool::Marker)),
+        Feature::Text => (T::Text, Button::Tool(Tool::Text)),
+        Feature::Number => (T::Number, Button::Tool(Tool::Number)),
+        Feature::Pixelate => (T::Pixelate, Button::Tool(Tool::Pixelate)),
+        Feature::Blur => (T::Blur, Button::Tool(Tool::Blur)),
+        Feature::Spotlight => (T::Spotlight, Button::Tool(Tool::Spotlight)),
+        _ => (T::Crop, Button::Crop),
+    };
+    (t(name), button)
+}
+
+fn features(page: &mut Page, settings: &Settings) {
+    for feature in FEATURES {
+        let (name, button, hint) = feature_info(feature);
+        if !page.matches(&[name, hint]) {
+            continue;
+        }
+        let on = settings.is_enabled(feature);
+        let y = page.y;
+        page.switch_row(Id::Feature(feature), name, Some(hint), on, true, 30.0);
+        let ink = if on {
+            page.ui.p.accent_text
+        } else {
+            page.ui.p.muted
+        };
+        page.ui.tool_icon(button, LEFT + 1.0, y + 12.0, 18.0, ink);
+    }
+}
+
+fn editor(page: &mut Page, settings: &Settings) {
+    let tools: Vec<Feature> = TOOLS
+        .into_iter()
+        .filter(|f| page.matches_quietly(&[tool_info(*f).0]))
+        .collect();
+    if tools.is_empty() {
+        return;
+    }
+    if page.searching() {
+        page.reveal();
+    }
+    let (columns, gap, tile_h) = (4, 10.0, 70.0);
+    let tile_w = (RIGHT - LEFT - gap * (columns - 1) as f32) / columns as f32;
+    let top = page.y + 8.0;
+    for (i, feature) in tools.iter().enumerate() {
+        let x = LEFT + (i % columns) as f32 * (tile_w + gap);
+        let y = top + (i / columns) as f32 * (tile_h + gap);
+        let (name, button) = tool_info(*feature);
+        page.ui.tile(
+            Id::Feature(*feature),
+            name,
+            button,
+            x,
+            y,
+            tile_w,
+            tile_h,
+            settings.is_enabled(*feature),
+        );
+    }
+    let rows = tools.len().div_ceil(columns);
+    page.y = top + rows as f32 * (tile_h + gap) + 4.0;
+}
+
+fn system(page: &mut Page, settings: &Settings, view: &View, replace_modes: bool) {
+    let (hint, error) = match view.notice {
+        Some(Notice::ReplaceFailed) => (t(T::ReplaceFailed), true),
+        _ => (t(platform::replace_system_hint()), false),
+    };
+    let on = settings.replace_system.is_on();
+    if page.matches(&[t(T::ReplaceSystem), hint, "prtsc", "print screen"]) {
+        let y = page.y;
+        page.switch_row(
+            Id::ReplaceSystem,
+            t(T::ReplaceSystem),
+            Some(hint),
+            on,
+            true,
+            0.0,
+        );
+        if error {
+            // Draw the hint again in red over the muted one.
+            let p = page.ui.p;
+            page.ui.fill(
+                SkRect::from_xywh(LEFT, y + 34.0, RIGHT - LEFT, page.y - y - 38.0),
+                0.0,
+                p.bg,
+            );
+            page.ui
+                .wrapped(hint, LEFT, y + 34.0, RIGHT - LEFT, 12.0, p.error);
+        }
+    }
     if replace_modes {
         // Asking or not only matters while the switch is on, but the row stays
         // put so the page doesn't jump; picking a mode turns the switch on.
-        ui.label(t(T::ReplaceWhen), left, y + 12.0, 13.0, TEXT);
-        let choices = [
-            (t(T::ReplaceAsk), ReplaceMode::Ask),
-            (t(T::ReplaceAuto), ReplaceMode::Auto),
-        ];
-        let seg_w = choices
-            .iter()
-            .map(|(name, _)| font::measure(name, 12.0).0 + 24.0)
-            .fold(60.0, f32::max);
-        let mut x = right - 2.0 * seg_w;
-        for (i, (name, mode)) in choices.iter().enumerate() {
-            let selected = settings.replace_system == *mode;
-            let id = Id::ReplaceMode(*mode);
-            ui.segment(id, name, x, y + 6.0, seg_w, selected, i == 0, i == 1);
-            x += seg_w;
-        }
-        y += ROW;
-    }
-    y -= 4.0;
-    let (hint, color) = match notice {
-        Some(Notice::ReplaceFailed) => (t(T::ReplaceFailed), ERROR),
-        _ => (t(platform::replace_system_hint()), MUTED),
-    };
-    ui.wrapped(hint, left, y, right - left, 12.0, color);
-    y += 34.0;
-    if replace_modes {
-        // Works whatever the switch says, e.g. after an old version left PrtSc off.
-        ui.link(Id::RestoreSystem, t(T::RestoreSystem), left, y, 12.0);
-        y += 22.0;
-    }
-    y = ui.divider(y);
-
-    // Saving
-    ui.label(t(T::Folder), left, y + 12.0, 13.0, TEXT);
-    let open_w = font::measure(t(T::Open), 12.0).0 + 20.0;
-    let path_w = 210.0;
-    let path_x = right - open_w - 6.0 - path_w;
-    let path = elide_start(&settings.folder.display().to_string(), 12.0, path_w - 20.0);
-    ui.field_left(Id::ChangeFolder, &path, path_x, y + 6.0, path_w);
-    ui.button(Id::OpenFolder, t(T::Open), right - open_w, y + 6.0, false);
-    y += ROW;
-    ui.label(t(T::Format), left, y + 12.0, 13.0, TEXT);
-    let seg_w = 60.0;
-    let mut x = right - 2.0 * seg_w;
-    for (i, (name, format)) in [("PNG", Format::Png), ("JPEG", Format::Jpeg)]
-        .iter()
-        .enumerate()
-    {
-        let selected = settings.format == *format;
-        ui.segment(
-            Id::Format(*format),
-            name,
-            x,
-            y + 6.0,
-            seg_w,
-            selected,
-            i == 0,
-            i == 1,
+        page.choice(
+            t(T::ReplaceWhen),
+            None,
+            &[
+                (
+                    t(T::ReplaceAsk),
+                    Id::ReplaceMode(ReplaceMode::Ask),
+                    settings.replace_system == ReplaceMode::Ask,
+                ),
+                (
+                    t(T::ReplaceAuto),
+                    Id::ReplaceMode(ReplaceMode::Auto),
+                    settings.replace_system == ReplaceMode::Auto,
+                ),
+            ],
         );
-        x += seg_w;
+        // Works whatever the switch says, e.g. after an old version left PrtSc off.
+        if page.matches(&[t(T::RestoreSystem)]) {
+            let y = page.y;
+            page.ui.link(
+                Id::RestoreSystem,
+                t(T::RestoreSystem),
+                LEFT,
+                y + 10.0,
+                13.0,
+                false,
+            );
+            page.y += 40.0;
+        }
     }
-    y += ROW;
-    ui.label(t(T::CopyAs), left, y + 12.0, 13.0, TEXT);
-    let choices = [
-        (t(T::CopyImage), CopyAs::Image),
-        (t(T::CopyFile), CopyAs::File),
-    ];
-    let seg_w = choices
-        .iter()
-        .map(|(name, _)| font::measure(name, 12.0).0 + 24.0)
-        .fold(60.0, f32::max);
-    let mut x = right - 2.0 * seg_w;
-    for (i, (name, copy_as)) in choices.iter().enumerate() {
-        let selected = settings.copy_as == *copy_as;
-        let id = Id::CopyAs(*copy_as);
-        ui.segment(id, name, x, y + 6.0, seg_w, selected, i == 0, i == 1);
-        x += seg_w;
-    }
-    y += ROW;
-    let instant = settings.copy_on_select;
-    ui.switch(Id::CopyOnSelect, t(T::CopyOnSelect), y, instant);
-    y += ROW;
-    // Only matters while copying on select is on, but the row stays put so
-    // the page doesn't jump.
-    let editor = settings.window_opens_editor;
-    ui.switch(Id::WindowOpensEditor, t(T::WindowOpensEditor), y, editor);
-    y += ROW;
-    ui.switch(Id::QuickSave, t(T::QuickSave), y, settings.quick_save);
-    y += ROW;
-    ui.switch(Id::SaveOnCopy, t(T::SaveOnCopy), y, settings.save_on_copy);
-    y += ROW;
-    let open = settings.open_after_save;
-    ui.switch(Id::OpenAfterSave, t(T::OpenAfterSave), y, open);
-    y + ROW
 }
 
-/// The shortcuts page: every action with its keys; returns where it ends.
-fn shortcuts(
-    ui: &mut Ui,
-    settings: &Settings,
-    recording: Option<Shortcut>,
-    notice: Option<Notice>,
-    mut y: f32,
-) -> f32 {
-    let left = MARGIN;
-    let right = WIDTH as f32 - MARGIN;
-    for which in Shortcut::ALL {
-        let label = match which {
-            Shortcut::Capture => t(T::TakeScreenshot),
-            Shortcut::Pick => t(T::PickColor),
-            Shortcut::FullScreen => t(T::FullScreen),
-            Shortcut::RepeatArea => t(T::RepeatArea),
-            Shortcut::PinLast => t(T::PinLast),
-            Shortcut::ScrollPage => t(T::ScrollPage),
-            Shortcut::Recognize => t(T::Recognize),
-            Shortcut::Scroll => t(T::Scroll),
-            Shortcut::Record => t(T::Record),
-            Shortcut::Pin => t(T::Pin),
-            Shortcut::Copy => t(T::Copy),
-            Shortcut::Save => t(T::Save),
-        };
-        ui.label(label, left, y + 10.0, 13.0, TEXT);
-        let active = recording == Some(which);
-        let keys = settings.shortcut(which);
-        let field = if active {
-            t(T::PressShortcut).to_string()
-        } else if keys.is_empty() {
-            "—".to_string()
-        } else {
-            hotkey_label(keys)
-        };
-        let field_w = 130.0;
-        ui.field(
-            Id::Hotkey(which),
-            &field,
-            right - field_w,
-            y + 4.0,
-            field_w,
-            active,
-        );
-        if keys != which.default_keys() && !active {
-            let w = font::measure(t(T::Reset), 12.0).0;
-            let x = right - field_w - 10.0 - w;
-            ui.link(Id::ResetHotkey(which), t(T::Reset), x, y + 11.0, 12.0);
+fn about(page: &mut Page, settings: &Settings, update: &UpdateStatus) {
+    let p = page.ui.p;
+    let version = t(T::Version).replace("{}", env!("CARGO_PKG_VERSION"));
+    if !page.searching() {
+        let y = page.y + 6.0;
+        page.ui.logo(LEFT, y, 52.0);
+        page.ui.label("Snapt", LEFT + 68.0, y + 4.0, 20.0, p.text);
+        page.ui
+            .label(&version, LEFT + 68.0, y + 32.0, 12.0, p.muted);
+        page.y = y + 70.0;
+        let h = page
+            .ui
+            .wrapped(t(T::License), LEFT, page.y, RIGHT - LEFT, 12.0, p.muted);
+        page.y += h + 10.0;
+        let mut x = LEFT;
+        for (text, url) in [
+            (t(T::Website), env!("CARGO_PKG_HOMEPAGE")),
+            ("GitHub", SOURCE),
+        ] {
+            page.ui.link(Id::Link(url), text, x, page.y, 13.0, false);
+            x += font::measure(text, 13.0).0 + 20.0;
         }
-        y += ROW - 4.0;
+        page.y += 26.0;
     }
-    let (hint, color) = match notice {
-        Some(Notice::ShortcutTaken) => (t(T::ShortcutTaken), ERROR),
-        Some(Notice::ShortcutInvalid) => (t(T::ShortcutInvalid), ERROR),
-        _ => (t(T::ShortcutsHint), MUTED),
+
+    page.group(t(T::Updates));
+    let (status, color) = match update {
+        UpdateStatus::Idle => (version.clone(), p.muted),
+        UpdateStatus::Checking => (t(T::Checking).into(), p.muted),
+        UpdateStatus::UpToDate => (t(T::UpToDate).into(), p.muted),
+        UpdateStatus::Available(v) => (t(T::UpdateAvailable).replace("{}", v), p.text),
+        UpdateStatus::Downloading => (t(T::Downloading).into(), p.muted),
+        UpdateStatus::Failed => (t(T::UpdateFailed).into(), p.error),
     };
-    ui.wrapped(hint, left, y + 4.0, right - left, 12.0, color);
-    y + 34.0
+    if page.matches(&[t(T::CheckNow), t(T::InstallUpdate), &status]) {
+        let y = page.y;
+        let w = match update {
+            UpdateStatus::Available(_) => {
+                let w = font::measure(t(T::InstallUpdate), 12.0).0 + 24.0;
+                page.ui.button(
+                    Id::InstallUpdate,
+                    t(T::InstallUpdate),
+                    RIGHT - w,
+                    y + 8.0,
+                    true,
+                );
+                w
+            }
+            UpdateStatus::Checking | UpdateStatus::Downloading => 0.0,
+            _ => {
+                let w = font::measure(t(T::CheckNow), 12.0).0 + 20.0;
+                page.ui
+                    .button(Id::CheckUpdates, t(T::CheckNow), RIGHT - w, y + 8.0, false);
+                w
+            }
+        };
+        let status = elide_end(&status, 13.0, RIGHT - LEFT - w - 12.0);
+        page.ui.label(&status, LEFT, y + 14.0, 13.0, color);
+        page.y += ROW;
+    }
+    let on = settings.auto_update;
+    page.switch(Id::AutoUpdate, t(T::AutoUpdate), None, on, true);
+
+    page.group(t(T::MoreFromAuthor));
+    for (name, about, url) in [
+        ("Leveler", t(T::LevelerAbout), LEVELER),
+        ("Video Glow", t(T::VideoGlowAbout), VIDEO_GLOW),
+    ] {
+        if !page.matches(&[name, about]) {
+            continue;
+        }
+        let y = page.y + 4.0;
+        let hovered = page.ui.hit(Id::Link(url), LEFT, y, RIGHT - LEFT, 54.0);
+        let color = if hovered { p.control_hover } else { p.control };
+        page.ui
+            .fill(SkRect::from_xywh(LEFT, y, RIGHT - LEFT, 54.0), 10.0, color);
+        page.ui.label(name, LEFT + 14.0, y + 10.0, 13.0, p.text);
+        let about = elide_end(about, 12.0, RIGHT - LEFT - 28.0);
+        page.ui.label(&about, LEFT + 14.0, y + 30.0, 12.0, p.muted);
+        page.y = y + 62.0;
+    }
+}
+
+/// Lays rows out one under another, and in a search keeps only those that match.
+struct Page<'u, 'a> {
+    ui: &'u mut Ui<'a>,
+    y: f32,
+    /// The search, lowercase; `None` shows everything.
+    filter: Option<String>,
+    /// The section, while searching; its title goes above its first match.
+    section: Option<Section>,
+    heading_drawn: bool,
+    /// The section's own name matches, so all of it shows.
+    whole: bool,
+    /// How many rows matched.
+    shown: usize,
+    /// Something was drawn already.
+    started: bool,
+}
+
+impl<'u, 'a> Page<'u, 'a> {
+    fn new(ui: &'u mut Ui<'a>, y: f32, filter: Option<String>, section: Option<Section>) -> Self {
+        let whole = match (&filter, section) {
+            (Some(f), Some(s)) => s.title().to_lowercase().contains(f.as_str()),
+            _ => false,
+        };
+        Self {
+            ui,
+            y,
+            filter,
+            section,
+            heading_drawn: false,
+            whole,
+            shown: 0,
+            started: false,
+        }
+    }
+
+    fn searching(&self) -> bool {
+        self.filter.is_some()
+    }
+
+    /// Whether a row with these texts shows, without drawing anything.
+    fn matches_quietly(&self, texts: &[&str]) -> bool {
+        let Some(filter) = &self.filter else {
+            return true;
+        };
+        self.whole
+            || texts
+                .iter()
+                .any(|t| t.to_lowercase().contains(filter.as_str()))
+    }
+
+    /// Whether a row with these texts shows; the first one in a search puts
+    /// the section's title above it.
+    fn matches(&mut self, texts: &[&str]) -> bool {
+        if !self.matches_quietly(texts) {
+            return false;
+        }
+        self.reveal()
+    }
+
+    /// Counts a match and draws the heading above the section's first one.
+    fn reveal(&mut self) -> bool {
+        self.shown += 1;
+        if let Some(section) = self.section.filter(|_| !self.heading_drawn) {
+            self.heading_drawn = true;
+            let p = self.ui.p;
+            self.ui
+                .label(section.title(), LEFT, self.y + 14.0, 12.0, p.accent_text);
+            self.y += 36.0;
+        }
+        true
+    }
+
+    /// A caption over a group of rows; left out of search results.
+    fn group(&mut self, title: &str) {
+        if self.searching() {
+            return;
+        }
+        let p = self.ui.p;
+        // Space above every group but the first.
+        if self.started {
+            self.y += 14.0;
+        }
+        self.started = true;
+        self.ui
+            .label(&title.to_uppercase(), LEFT, self.y + 8.0, 11.0, p.muted);
+        self.y += 28.0;
+    }
+
+    /// Starts a row: draws its label and hint, moves past it, and returns its top.
+    fn row(&mut self, label: &str, hint: Option<&str>) -> f32 {
+        self.row_at(label, hint, 0.0, RIGHT - LEFT - 170.0)
+    }
+
+    fn row_at(&mut self, label: &str, hint: Option<&str>, indent: f32, hint_w: f32) -> f32 {
+        self.started = true;
+        let p = self.ui.p;
+        let y = self.y;
+        self.ui.label(label, LEFT + indent, y + 14.0, 13.0, p.text);
+        let mut h = ROW;
+        if let Some(hint) = hint {
+            let lines = self.ui.wrapped(
+                hint,
+                LEFT + indent,
+                y + 34.0,
+                hint_w - indent,
+                12.0,
+                p.muted,
+            );
+            h = 34.0 + lines + 10.0;
+        }
+        self.ui.fill(
+            SkRect::from_xywh(LEFT, y + h - 0.5, RIGHT - LEFT, 1.0),
+            0.0,
+            p.line,
+        );
+        self.y += h;
+        y
+    }
+
+    /// A row with a switch on the right; the whole row toggles.
+    fn switch(&mut self, id: Id, label: &str, hint: Option<&str>, on: bool, enabled: bool) {
+        if self.matches(&[label, hint.unwrap_or_default()]) {
+            self.switch_row(id, label, hint, on, enabled, 0.0);
+        }
+    }
+
+    fn switch_row(
+        &mut self,
+        id: Id,
+        label: &str,
+        hint: Option<&str>,
+        on: bool,
+        enabled: bool,
+        indent: f32,
+    ) {
+        let p = self.ui.p;
+        let y = self.y;
+        // Hints run the full width, under the switch too.
+        let hint_w = RIGHT - LEFT - 56.0;
+        if enabled {
+            self.row_at(label, hint, indent, hint_w);
+        } else {
+            let label_color = p.muted;
+            self.ui
+                .label(label, LEFT + indent, y + 14.0, 13.0, label_color);
+            let mut h = ROW;
+            if let Some(hint) = hint {
+                h =
+                    34.0 + self.ui.wrapped(
+                        hint,
+                        LEFT + indent,
+                        y + 34.0,
+                        hint_w - indent,
+                        12.0,
+                        p.muted,
+                    ) + 10.0;
+            }
+            self.ui.fill(
+                SkRect::from_xywh(LEFT, y + h - 0.5, RIGHT - LEFT, 1.0),
+                0.0,
+                p.line,
+            );
+            self.y += h;
+        }
+        let hovered = enabled
+            && self
+                .ui
+                .hit(id, LEFT, y + 2.0, RIGHT - LEFT, self.y - y - 4.0);
+        let x = RIGHT - 36.0;
+        let track = match (on, enabled, hovered) {
+            (true, true, false) => p.accent,
+            (true, true, true) => p.accent_hover,
+            (true, false, _) => p.pill,
+            (false, _, true) => p.control_hover,
+            (false, _, false) => p.track,
+        };
+        self.ui
+            .fill(SkRect::from_xywh(x, y + 12.0, 36.0, 20.0), 10.0, track);
+        let knob_x = if on { x + 18.0 } else { x + 2.0 };
+        let knob = if enabled { 0xFFFFFF } else { p.control };
+        self.ui
+            .fill(SkRect::from_xywh(knob_x, y + 14.0, 16.0, 16.0), 8.0, knob);
+    }
+
+    /// A row with a segmented choice on the right.
+    fn choice(&mut self, label: &str, hint: Option<&str>, items: &[(&str, Id, bool)]) {
+        let mut texts: Vec<&str> = vec![label, hint.unwrap_or_default()];
+        texts.extend(items.iter().map(|(name, _, _)| *name));
+        if !self.matches(&texts) {
+            return;
+        }
+        let seg_w = items
+            .iter()
+            .map(|(name, _, _)| font::measure(name, 12.0).0 + 24.0)
+            .fold(56.0, f32::max);
+        let width = seg_w * items.len() as f32;
+        let y = self.row_at(label, hint, 0.0, RIGHT - LEFT);
+        let mut x = RIGHT - width;
+        for (i, (name, id, selected)) in items.iter().enumerate() {
+            let last = i == items.len() - 1;
+            self.ui
+                .segment(*id, name, x, y + 8.0, seg_w, *selected, i == 0, last);
+            x += seg_w;
+        }
+    }
+}
+
+/// The small icons drawn in code for the sidebar and fields.
+#[derive(Debug, Clone, Copy)]
+enum Glyph {
+    Search,
+    Clear,
 }
 
 /// Cuts the start off `text` until it fits in `width`, as `…/Pictures/Snapt`.
@@ -855,15 +1790,66 @@ fn elide_start(text: &str, size: f32, width: f32) -> String {
     "…".into()
 }
 
+/// Cuts the end off `text` until it fits in `width`, as `A long sente…`.
+fn elide_end(text: &str, size: f32, width: f32) -> String {
+    if font::measure(text, size).0 <= width {
+        return text.to_string();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    for end in (0..chars.len()).rev() {
+        let candidate: String = chars[..end].iter().copied().chain(['…']).collect();
+        if font::measure(&candidate, size).0 <= width {
+            return candidate;
+        }
+    }
+    "…".into()
+}
+
+/// Breaks `text` into lines that fit `width`; `\n` always breaks.
+fn wrap(text: &str, size: f32, width: f32) -> Vec<String> {
+    let mut lines = Vec::new();
+    for paragraph in text.split('\n') {
+        let mut line = String::new();
+        for word in paragraph.split(' ') {
+            let candidate = if line.is_empty() {
+                word.to_string()
+            } else {
+                format!("{line} {word}")
+            };
+            if font::measure(&candidate, size).0 > width && !line.is_empty() {
+                lines.push(std::mem::replace(&mut line, word.to_string()));
+            } else {
+                line = candidate;
+            }
+        }
+        lines.push(line);
+    }
+    lines
+}
+
 /// Drawing helpers in logical pixels; remembers clickable areas.
 struct Ui<'a> {
     pixmap: &'a mut Pixmap,
     scale: f32,
     hover: Option<Id>,
     hits: Vec<(Id, SkRect)>,
+    p: Palette,
+    /// Where the language list opens.
+    anchor: Option<SkRect>,
 }
 
-impl Ui<'_> {
+impl<'a> Ui<'a> {
+    fn new(pixmap: &'a mut Pixmap, scale: f32, hover: Option<Id>, dark: bool) -> Self {
+        Self {
+            pixmap,
+            scale,
+            hover,
+            hits: Vec::new(),
+            p: if dark { DARK } else { LIGHT },
+            anchor: None,
+        }
+    }
+
     fn rect(&self, r: Option<SkRect>) -> Option<SkRect> {
         let r = r?;
         let s = self.scale;
@@ -880,25 +1866,14 @@ impl Ui<'_> {
         font::draw(self.pixmap, text, x * s, y * s, size * s, color, 1.0);
     }
 
-    /// Text broken into lines that fit `width`.
-    fn wrapped(&mut self, text: &str, x: f32, y: f32, width: f32, size: f32, color: u32) {
-        let mut line = String::new();
-        let mut y = y;
-        for word in text.split(' ') {
-            let candidate = if line.is_empty() {
-                word.to_string()
-            } else {
-                format!("{line} {word}")
-            };
-            if font::measure(&candidate, size).0 > width && !line.is_empty() {
-                self.label(&line, x, y, size, color);
-                y += font::line_height(size);
-                line = word.to_string();
-            } else {
-                line = candidate;
-            }
+    /// Text broken into lines that fit `width`; returns how tall it is.
+    fn wrapped(&mut self, text: &str, x: f32, y: f32, width: f32, size: f32, color: u32) -> f32 {
+        let lines = wrap(text, size, width);
+        let line_h = font::line_height(size);
+        for (i, line) in lines.iter().enumerate() {
+            self.label(line, x, y + i as f32 * line_h, size, color);
         }
-        self.label(&line, x, y, size, color);
+        lines.len() as f32 * line_h
     }
 
     fn hit(&mut self, id: Id, x: f32, y: f32, w: f32, h: f32) -> bool {
@@ -908,14 +1883,153 @@ impl Ui<'_> {
         self.hover == Some(id)
     }
 
-    /// A thin line between groups; returns where the next group starts.
-    fn divider(&mut self, y: f32) -> f32 {
-        self.fill(
-            SkRect::from_xywh(MARGIN, y + 6.0, WIDTH as f32 - 2.0 * MARGIN, 1.0),
-            0.0,
-            LINE,
-        );
-        y + 13.0
+    /// A thin line across the page.
+    fn divider(&mut self, y: f32) {
+        let line = self.p.line;
+        self.fill(SkRect::from_xywh(LEFT, y, RIGHT - LEFT, 1.0), 0.0, line);
+    }
+
+    /// The Snapt icon, `size` across.
+    fn logo(&mut self, x: f32, y: f32, size: f32) {
+        let mut data = icon::rgba();
+        for px in data.chunks_exact_mut(4) {
+            let a = px[3] as u16;
+            for c in &mut px[..3] {
+                *c = (*c as u16 * a / 255) as u8;
+            }
+        }
+        let Some(source) = tiny_skia::IntSize::from_wh(icon::SIZE, icon::SIZE)
+            .and_then(|size| Pixmap::from_vec(data, size))
+        else {
+            return;
+        };
+        let k = size * self.scale / icon::SIZE as f32;
+        let paint = PixmapPaint {
+            quality: FilterQuality::Bicubic,
+            ..PixmapPaint::default()
+        };
+        let transform = Transform::from_row(k, 0.0, 0.0, k, x * self.scale, y * self.scale);
+        self.pixmap
+            .draw_pixmap(0, 0, source.as_ref(), &paint, transform, None);
+    }
+
+    /// A toolbar icon, `size` across.
+    fn tool_icon(&mut self, button: Button, x: f32, y: f32, size: f32, ink: u32) {
+        let k = size / 16.0 * self.scale;
+        let transform = Transform::from_row(k, 0.0, 0.0, k, x * self.scale, y * self.scale);
+        draw_icon(self.pixmap, button, ink, ink, false, transform);
+    }
+
+    fn stroke(&mut self, path: PathBuilder, ink: u32, transform: Transform, width: f32) {
+        let Some(path) = path.finish() else { return };
+        let mut paint = Paint::default();
+        let [r, g, b] = rgb(ink);
+        paint.set_color_rgba8(r, g, b, 255);
+        paint.anti_alias = true;
+        let stroke = Stroke {
+            width,
+            line_cap: LineCap::Round,
+            line_join: LineJoin::Round,
+            ..Stroke::default()
+        };
+        self.pixmap
+            .stroke_path(&path, &paint, &stroke, transform, None);
+    }
+
+    fn glyph(&mut self, glyph: Glyph, x: f32, y: f32, size: f32, ink: u32) {
+        let k = size / 16.0 * self.scale;
+        let transform = Transform::from_row(k, 0.0, 0.0, k, x * self.scale, y * self.scale);
+        let mut p = PathBuilder::new();
+        match glyph {
+            Glyph::Search => {
+                p.push_circle(7.0, 7.0, 4.5);
+                p.move_to(10.3, 10.3);
+                p.line_to(13.8, 13.8);
+            }
+            Glyph::Clear => {
+                p.move_to(4.0, 4.0);
+                p.line_to(12.0, 12.0);
+                p.move_to(12.0, 4.0);
+                p.line_to(4.0, 12.0);
+            }
+        }
+        self.stroke(p, ink, transform, 1.6);
+    }
+
+    /// The icon of a sidebar section, 16 across.
+    fn section_icon(&mut self, section: Section, x: f32, y: f32, ink: u32) {
+        let s = self.scale;
+        let transform = Transform::from_row(s, 0.0, 0.0, s, x * s, y * s);
+        let mut p = PathBuilder::new();
+        match section {
+            Section::General => {
+                // Two sliders.
+                p.move_to(2.0, 5.0);
+                p.line_to(14.0, 5.0);
+                p.move_to(2.0, 11.0);
+                p.line_to(14.0, 11.0);
+                p.push_circle(5.5, 5.0, 2.0);
+                p.push_circle(10.5, 11.0, 2.0);
+            }
+            Section::Capture => {
+                // The corners of a selection.
+                for (cx, cy, dx, dy) in [
+                    (2.0, 2.0, 1.0, 1.0),
+                    (14.0, 2.0, -1.0, 1.0),
+                    (2.0, 14.0, 1.0, -1.0),
+                    (14.0, 14.0, -1.0, -1.0),
+                ] {
+                    p.move_to(cx, cy + 4.0 * dy);
+                    p.line_to(cx, cy);
+                    p.line_to(cx + 4.0 * dx, cy);
+                }
+                p.push_circle(8.0, 8.0, 1.2);
+            }
+            Section::Saving => return self.tool_icon(Button::Save, x, y, 16.0, ink),
+            Section::Shortcuts => {
+                // A keyboard.
+                p.push_rect(SkRect::from_xywh(1.5, 3.5, 13.0, 9.0).unwrap());
+                for kx in [4.5, 7.0, 9.5, 12.0] {
+                    p.move_to(kx - 0.3, 6.3);
+                    p.line_to(kx + 0.3, 6.3);
+                }
+                p.move_to(5.0, 9.6);
+                p.line_to(11.0, 9.6);
+            }
+            Section::Features => {
+                // A sparkle.
+                p.move_to(8.0, 1.5);
+                p.cubic_to(8.6, 5.6, 10.4, 7.4, 14.5, 8.0);
+                p.cubic_to(10.4, 8.6, 8.6, 10.4, 8.0, 14.5);
+                p.cubic_to(7.4, 10.4, 5.6, 8.6, 1.5, 8.0);
+                p.cubic_to(5.6, 7.4, 7.4, 5.6, 8.0, 1.5);
+                p.close();
+            }
+            Section::Editor => return self.tool_icon(Button::Tool(Tool::Pen), x, y, 16.0, ink),
+            Section::System => {
+                // A screen on a stand.
+                p.push_rect(SkRect::from_xywh(1.5, 2.5, 13.0, 8.5).unwrap());
+                p.move_to(8.0, 11.0);
+                p.line_to(8.0, 13.5);
+                p.move_to(5.0, 13.5);
+                p.line_to(11.0, 13.5);
+            }
+            Section::About => {
+                // An "i" in a circle.
+                p.push_circle(8.0, 8.0, 6.3);
+                p.move_to(8.0, 7.2);
+                p.line_to(8.0, 11.2);
+                p.move_to(8.0, 4.8);
+                p.line_to(8.0, 4.9);
+            }
+        }
+        self.stroke(p, ink, transform, 1.5 * s);
+    }
+
+    /// A blinking-free text cursor.
+    fn caret(&mut self, x: f32, y: f32) {
+        let color = self.p.accent_text;
+        self.fill(SkRect::from_xywh(x, y, 1.5, 16.0), 0.0, color);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -930,16 +2044,17 @@ impl Ui<'_> {
         first: bool,
         last: bool,
     ) {
+        let p = self.p;
         let hovered = self.hit(id, x, y, w, H);
         let color = if selected {
-            ACCENT
+            p.accent
         } else if hovered {
-            CONTROL_HOVER
+            p.control_hover
         } else {
-            CONTROL
+            p.control
         };
         // Square inner edges by overdrawing rounded pieces from the neighbors' side.
-        self.fill(SkRect::from_xywh(x, y, w, H), 6.0, color);
+        self.fill(SkRect::from_xywh(x, y, w, H), 7.0, color);
         if !first {
             self.fill(SkRect::from_xywh(x, y, 8.0, H), 0.0, color);
         }
@@ -947,108 +2062,151 @@ impl Ui<'_> {
             self.fill(SkRect::from_xywh(x + w - 8.0, y, 8.0, H), 0.0, color);
         }
         let tw = font::measure(text, 12.0).0;
-        self.label(text, x + (w - tw) / 2.0, y + 7.0, 12.0, TEXT);
-    }
-
-    /// A row with `text` on the left and a switch on the right; the whole row toggles.
-    fn switch(&mut self, id: Id, text: &str, y: f32, on: bool) {
-        let right = WIDTH as f32 - MARGIN;
-        let hovered = self.hit(id, MARGIN, y + 4.0, right - MARGIN, ROW - 8.0);
-        self.label(text, MARGIN, y + 12.0, 13.0, TEXT);
-        let x = right - 34.0;
-        let track = if on {
-            ACCENT
-        } else if hovered {
-            CONTROL_HOVER
-        } else {
-            CONTROL
-        };
-        self.fill(SkRect::from_xywh(x, y + 10.0, 34.0, 20.0), 10.0, track);
-        let knob_x = if on { x + 16.0 } else { x + 2.0 };
-        self.fill(SkRect::from_xywh(knob_x, y + 12.0, 16.0, 16.0), 8.0, TEXT);
+        let ink = if selected { 0xFFFFFF } else { p.text };
+        self.label(text, x + (w - tw) / 2.0, y + 7.0, 12.0, ink);
     }
 
     /// A drop-down field showing the current choice.
     fn select(&mut self, id: Id, text: &str, x: f32, y: f32, w: f32, open: bool) {
+        let p = self.p;
         let hovered = self.hit(id, x, y, w, H);
         let color = if hovered || open {
-            CONTROL_HOVER
+            p.control_hover
         } else {
-            CONTROL
+            p.control
         };
-        self.fill(SkRect::from_xywh(x, y, w, H), 6.0, color);
-        self.label(text, x + 10.0, y + 7.0, 12.0, TEXT);
-        self.chevron(x + w - 16.0, y + H / 2.0);
-    }
-
-    fn chevron(&mut self, cx: f32, cy: f32) {
+        self.fill(SkRect::from_xywh(x, y, w, H), 7.0, color);
+        self.label(text, x + 10.0, y + 7.0, 12.0, p.text);
+        let (cx, cy) = (x + w - 16.0, y + H / 2.0);
+        let mut path = PathBuilder::new();
+        path.move_to(cx - 4.0, cy - 2.0);
+        path.line_to(cx, cy + 2.0);
+        path.line_to(cx + 4.0, cy - 2.0);
         let s = self.scale;
-        let mut pb = PathBuilder::new();
-        pb.move_to((cx - 4.0) * s, (cy - 2.0) * s);
-        pb.line_to(cx * s, (cy + 2.0) * s);
-        pb.line_to((cx + 4.0) * s, (cy - 2.0) * s);
-        let Some(path) = pb.finish() else { return };
-        let mut paint = Paint::default();
-        let [r, g, b] = rgb(MUTED);
-        paint.set_color_rgba8(r, g, b, 255);
-        paint.anti_alias = true;
-        let stroke = Stroke {
-            width: 1.5 * s,
-            line_cap: LineCap::Round,
-            line_join: LineJoin::Round,
-            ..Default::default()
-        };
-        self.pixmap
-            .stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+        self.stroke(path, p.muted, Transform::from_scale(s, s), 1.5 * s);
     }
 
     fn field(&mut self, id: Id, text: &str, x: f32, y: f32, w: f32, active: bool) {
+        let p = self.p;
         let hovered = self.hit(id, x, y, w, H);
         if active {
             self.fill(
                 SkRect::from_xywh(x - 1.5, y - 1.5, w + 3.0, H + 3.0),
-                7.0,
-                ACCENT,
+                8.0,
+                p.accent,
             );
         }
         let color = if hovered && !active {
-            CONTROL_HOVER
+            p.control_hover
         } else {
-            CONTROL
+            p.control
         };
-        self.fill(SkRect::from_xywh(x, y, w, H), 6.0, color);
+        self.fill(SkRect::from_xywh(x, y, w, H), 7.0, color);
         let tw = font::measure(text, 12.0).0;
-        let text_color = if active { MUTED } else { TEXT };
-        self.label(text, x + (w - tw) / 2.0, y + 7.0, 12.0, text_color);
+        let ink = if active { p.muted } else { p.text };
+        self.label(text, x + (w - tw) / 2.0, y + 7.0, 12.0, ink);
     }
 
     /// A clickable field with left-aligned, muted text.
     fn field_left(&mut self, id: Id, text: &str, x: f32, y: f32, w: f32) {
+        let p = self.p;
         let hovered = self.hit(id, x, y, w, H);
-        let color = if hovered { CONTROL_HOVER } else { CONTROL };
-        self.fill(SkRect::from_xywh(x, y, w, H), 6.0, color);
-        self.label(text, x + 10.0, y + 7.0, 12.0, MUTED);
+        let color = if hovered { p.control_hover } else { p.control };
+        self.fill(SkRect::from_xywh(x, y, w, H), 7.0, color);
+        self.label(text, x + 10.0, y + 7.0, 12.0, p.muted);
+    }
+
+    /// A field to type into.
+    fn text_field(&mut self, id: Id, text: &str, x: f32, y: f32, w: f32, focused: bool) {
+        let p = self.p;
+        let hovered = self.hit(id, x, y, w, H);
+        if focused {
+            self.fill(
+                SkRect::from_xywh(x - 1.5, y - 1.5, w + 3.0, H + 3.0),
+                8.0,
+                p.accent,
+            );
+        }
+        let color = if hovered && !focused {
+            p.control_hover
+        } else {
+            p.control
+        };
+        self.fill(SkRect::from_xywh(x, y, w, H), 7.0, color);
+        let shown = elide_start(text, 12.0, w - 22.0);
+        self.label(&shown, x + 10.0, y + 7.0, 12.0, p.text);
+        if focused {
+            self.caret(x + 11.0 + font::measure(&shown, 12.0).0, y + 6.0);
+        }
     }
 
     fn button(&mut self, id: Id, text: &str, x: f32, y: f32, primary: bool) {
+        let p = self.p;
         let tw = font::measure(text, 12.0).0;
         let w = tw + if primary { 24.0 } else { 20.0 };
         let hovered = self.hit(id, x, y, w, H);
         let color = match (primary, hovered) {
-            (true, false) => ACCENT,
-            (true, true) => 0x9D74F8,
-            (false, false) => CONTROL,
-            (false, true) => CONTROL_HOVER,
+            (true, false) => p.accent,
+            (true, true) => p.accent_hover,
+            (false, false) => p.control,
+            (false, true) => p.control_hover,
         };
-        self.fill(SkRect::from_xywh(x, y, w, H), 6.0, color);
-        self.label(text, x + (w - tw) / 2.0, y + 7.0, 12.0, TEXT);
+        self.fill(SkRect::from_xywh(x, y, w, H), 7.0, color);
+        let ink = if primary { 0xFFFFFF } else { p.text };
+        self.label(text, x + (w - tw) / 2.0, y + 7.0, 12.0, ink);
     }
 
-    fn link(&mut self, id: Id, text: &str, x: f32, y: f32, size: f32) {
+    fn link(&mut self, id: Id, text: &str, x: f32, y: f32, size: f32, warn: bool) {
+        let p = self.p;
         let (w, h) = font::measure(text, size);
         let hovered = self.hit(id, x, y, w, h);
-        let color = if hovered { 0xC4B5FD } else { ACCENT_TEXT };
+        let color = match (warn, hovered) {
+            (true, _) => p.error,
+            (false, true) => p.link_hover,
+            (false, false) => p.accent_text,
+        };
         self.label(text, x, y, size, color);
+    }
+
+    /// A drawing tool that turns on and off with a click.
+    #[allow(clippy::too_many_arguments)]
+    fn tile(
+        &mut self,
+        id: Id,
+        name: &str,
+        button: Button,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        on: bool,
+    ) {
+        let p = self.p;
+        let hovered = self.hit(id, x, y, w, h);
+        if on {
+            self.fill(SkRect::from_xywh(x, y, w, h), 10.0, p.accent);
+            self.fill(
+                SkRect::from_xywh(x + 1.5, y + 1.5, w - 3.0, h - 3.0),
+                9.0,
+                p.pill,
+            );
+        } else {
+            let color = if hovered { p.control_hover } else { p.control };
+            self.fill(SkRect::from_xywh(x, y, w, h), 10.0, color);
+        }
+        if on && hovered {
+            self.fill(
+                SkRect::from_xywh(x + 1.5, y + 1.5, w - 3.0, h - 3.0),
+                9.0,
+                p.control_hover,
+            );
+        }
+        let ink = if on { p.accent_text } else { p.muted };
+        self.tool_icon(button, x + (w - 20.0) / 2.0, y + 14.0, 20.0, ink);
+        let name = elide_end(name, 12.0, w - 12.0);
+        let tw = font::measure(&name, 12.0).0;
+        let color = if on { p.text } else { p.muted };
+        self.label(&name, x + (w - tw) / 2.0, y + 44.0, 12.0, color);
     }
 }
 
@@ -1087,74 +2245,151 @@ mod tests {
         assert!(font::measure(&short, 13.0).0 <= 120.0);
     }
 
+    fn draw(view: &View, dark: bool) -> (Pixmap, Vec<(Id, SkRect)>, f32) {
+        let mut pixmap = Pixmap::new(WIDTH as u32, HEIGHT as u32).unwrap();
+        let mut ui = Ui::new(&mut pixmap, 1.0, None, dark);
+        let update = UpdateStatus::Available("9.9.9".into());
+        let height = build(&mut ui, &Settings::default(), &update, view);
+        let hits = ui.hits;
+        (pixmap, hits, height)
+    }
+
     #[test]
-    fn every_language_lays_out_inside_the_window() {
+    fn every_section_lays_out_in_every_language() {
+        for lang in Lang::ALL {
+            let _lang = crate::snapshot::language(lang);
+            for section in Section::ALL {
+                let view = View {
+                    section,
+                    menu_open: true,
+                    ..View::new()
+                };
+                let (_, hits, _) = draw(&view, true);
+                for (id, r) in &hits {
+                    let in_sidebar = r.right() <= SIDEBAR;
+                    let in_page = r.left() >= LEFT - 0.5 && r.right() <= RIGHT + 0.5;
+                    assert!(
+                        in_sidebar || in_page,
+                        "{id:?} {r:?} in {section:?}, {lang:?}"
+                    );
+                }
+                // Labels must not run under the controls on their right.
+                let label = font::measure(section.title(), 13.0).0;
+                assert!(50.0 + label <= SIDEBAR - 14.0, "{section:?} in {lang:?}");
+                assert!(font::measure(section.title(), 19.0).0 <= RIGHT - LEFT);
+            }
+        }
+    }
+
+    /// The Windows rows for asking or replacing must fit too, though these tests run elsewhere.
+    #[test]
+    fn the_replace_modes_fit_in_every_language() {
         for lang in Lang::ALL {
             let _lang = crate::snapshot::language(lang);
             let mut pixmap = Pixmap::new(WIDTH as u32, HEIGHT as u32).unwrap();
-            let mut ui = Ui {
-                pixmap: &mut pixmap,
-                scale: 1.0,
-                hover: None,
-                hits: Vec::new(),
-            };
-            let update = UpdateStatus::Available("9.9.9".into());
-            for tab in [Tab::General, Tab::Shortcuts, Tab::Features, Tab::Editor] {
-                build(
-                    &mut ui,
-                    &Settings::default(),
-                    &update,
-                    tab,
-                    None,
-                    None,
-                    true,
-                );
-            }
+            let mut ui = Ui::new(&mut pixmap, 1.0, None, true);
+            let mut page = Page::new(&mut ui, HEADER, None, None);
+            system(&mut page, &Settings::default(), &View::new(), true);
+            let end = page.y;
+            assert!(end <= HEIGHT as f32, "ends at {end} in {lang:?}");
             for (id, r) in &ui.hits {
                 assert!(
-                    r.left() >= MARGIN - 0.5
-                        && r.right() <= WIDTH as f32 - MARGIN + 0.5
-                        && r.bottom() <= HEIGHT as f32 - 8.0,
+                    r.left() >= LEFT - 0.5 && r.right() <= RIGHT + 0.5,
                     "{id:?} {r:?} in {lang:?}"
                 );
             }
         }
     }
 
-    /// The Windows row for asking or replacing must fit too, though these tests run elsewhere.
     #[test]
-    fn the_replace_modes_fit_in_every_language() {
+    fn row_labels_leave_room_for_their_controls() {
         for lang in Lang::ALL {
             let _lang = crate::snapshot::language(lang);
-            let mut pixmap = Pixmap::new(WIDTH as u32, HEIGHT_WITH_MODES as u32).unwrap();
-            let mut ui = Ui {
-                pixmap: &mut pixmap,
-                scale: 1.0,
-                hover: None,
-                hits: Vec::new(),
-            };
-            let top = ui.divider(12.0 + H + 6.0);
-            let settings = Settings::default();
-            let end = general(&mut ui, &settings, None, false, true, top);
-            assert!(
-                end <= HEIGHT_WITH_MODES as f32 - 52.0,
-                "ends at {end} in {lang:?}"
-            );
-            // The label must not run under the two choices.
-            let label = font::measure(t(T::ReplaceWhen), 13.0).0;
-            let first = ui
-                .hits
-                .iter()
-                .find(|(id, _)| *id == Id::ReplaceMode(ReplaceMode::Ask))
-                .map(|(_, r)| r.left())
-                .unwrap();
-            assert!(MARGIN + label + 12.0 <= first, "{lang:?}");
-            for (id, r) in &ui.hits {
+            // The widest control next to a label is the three-way theme choice.
+            let theme = [T::ThemeSystem, T::ThemeLight, T::ThemeDark]
+                .map(|k| font::measure(t(k), 12.0).0 + 24.0)
+                .into_iter()
+                .fold(56.0, f32::max)
+                * 3.0;
+            assert!(LEFT + font::measure(t(T::Theme), 13.0).0 + 12.0 <= RIGHT - theme);
+            for (label, control) in [
+                (T::ReplaceWhen, [T::ReplaceAsk, T::ReplaceAuto]),
+                (T::CopyAs, [T::CopyImage, T::CopyFile]),
+            ] {
+                let w = [control[0], control[1]]
+                    .map(|k| font::measure(t(k), 12.0).0 + 24.0)
+                    .into_iter()
+                    .fold(56.0, f32::max)
+                    * 2.0;
                 assert!(
-                    r.left() >= MARGIN - 0.5 && r.right() <= WIDTH as f32 - MARGIN + 0.5,
-                    "{id:?} {r:?} in {lang:?}"
+                    LEFT + font::measure(t(label), 13.0).0 + 12.0 <= RIGHT - w,
+                    "{label:?} in {lang:?}"
                 );
             }
+            let history = 4.0 * font::measure(t(T::Off), 12.0).0.max(32.0).max(56.0 - 24.0) + 96.0;
+            assert!(
+                LEFT + font::measure(t(T::HistoryLimit), 13.0).0 + 12.0 <= RIGHT - history,
+                "{lang:?}"
+            );
+            for which in Shortcut::ALL {
+                let reset = font::measure(t(T::Reset), 12.0).0 + 12.0;
+                let w = font::measure(shortcut_label(which), 13.0).0;
+                assert!(
+                    LEFT + w + 12.0 <= RIGHT - 150.0 - reset,
+                    "{which:?} in {lang:?}"
+                );
+            }
+            for tool in TOOLS {
+                let tile_w = (RIGHT - LEFT - 30.0) / 4.0;
+                assert!(
+                    font::measure(tool_info(tool).0, 12.0).0 <= tile_w - 12.0,
+                    "{tool:?} in {lang:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn search_finds_rows_in_every_section() {
+        let _lang = crate::snapshot::language(Lang::En);
+        let find = |query: &str| {
+            let view = View {
+                query: query.into(),
+                ..View::new()
+            };
+            draw(&view, true).1
+        };
+        let hits = find("jpeg");
+        assert!(hits.iter().any(|(id, _)| *id == Id::Format(Format::Jpeg)));
+        assert!(!hits.iter().any(|(id, _)| *id == Id::Autostart));
+        let hits = find("blur");
+        assert!(hits.iter().any(|(id, _)| *id == Id::Feature(Feature::Blur)));
+        assert!(!hits.iter().any(|(id, _)| *id == Id::Feature(Feature::Pen)));
+        // A section's name shows all of it.
+        let hits = find("editor");
+        assert!(hits.iter().any(|(id, _)| *id == Id::Feature(Feature::Pen)));
+        let hits = find("zzzz");
+        assert!(
+            hits.iter()
+                .all(|(id, _)| matches!(id, Id::Section(_) | Id::Search | Id::ClearSearch))
+        );
+    }
+
+    #[test]
+    fn long_pages_scroll_and_hide_under_the_header() {
+        let _lang = crate::snapshot::language(Lang::Ru);
+        let view = View {
+            section: Section::Shortcuts,
+            scroll: 60.0,
+            ..View::new()
+        };
+        let (_, hits, height) = draw(&view, false);
+        assert!(
+            height > HEIGHT as f32 - HEADER,
+            "the shortcuts page is long"
+        );
+        for (id, r) in &hits {
+            assert!(r.right() <= SIDEBAR || r.top() >= HEADER, "{id:?} {r:?}");
         }
     }
 
@@ -1177,36 +2412,47 @@ mod tests {
             *settings.shortcut_mut(which) = which.default_keys().replace("Cmd", "Ctrl");
         }
         *settings.shortcut_mut(Shortcut::Capture) = "Ctrl+Shift+X".into();
-        for (lang, name, tab) in [
-            (Lang::En, "settings-en", Tab::General),
-            (Lang::Ru, "settings-ru", Tab::General),
-            (Lang::En, "settings-shortcuts-en", Tab::Shortcuts),
-            (Lang::Ru, "settings-features-ru", Tab::Features),
-            (Lang::Uk, "settings-editor-uk", Tab::Editor),
+        // A fixed file name, so the example under it doesn't change with the clock.
+        settings.file_name = "screenshot".into();
+        settings.disabled = vec![Feature::Print, Feature::Crop, Feature::Marker];
+        for (lang, name, section, dark, query) in [
+            (Lang::En, "settings-en", Section::General, true, ""),
+            (Lang::Ru, "settings-ru", Section::Capture, false, ""),
+            (Lang::Ru, "settings-saving-ru", Section::Saving, true, ""),
+            (
+                Lang::En,
+                "settings-shortcuts-en",
+                Section::Shortcuts,
+                false,
+                "",
+            ),
+            (
+                Lang::Ru,
+                "settings-features-ru",
+                Section::Features,
+                true,
+                "",
+            ),
+            (Lang::Uk, "settings-editor-uk", Section::Editor, false, ""),
+            (Lang::En, "settings-system-en", Section::System, false, ""),
+            (
+                Lang::En,
+                "settings-search-en",
+                Section::General,
+                true,
+                "save",
+            ),
         ] {
             let _lang = crate::snapshot::language(lang);
             let mut pixmap = Pixmap::new(WIDTH as u32, HEIGHT as u32).unwrap();
-            let mut ui = Ui {
-                pixmap: &mut pixmap,
-                scale: 1.0,
-                hover: None,
-                hits: Vec::new(),
+            let mut ui = Ui::new(&mut pixmap, 1.0, None, dark);
+            let view = View {
+                section,
+                query: query.into(),
+                ..View::new()
             };
-            ui.fill(
-                SkRect::from_xywh(0.0, 0.0, WIDTH as f32, HEIGHT as f32),
-                0.0,
-                BG,
-            );
             // Not `Idle`, which shows the version and would change every release.
-            build(
-                &mut ui,
-                &settings,
-                &UpdateStatus::UpToDate,
-                tab,
-                None,
-                None,
-                false,
-            );
+            build(&mut ui, &settings, &UpdateStatus::UpToDate, &view);
             let image =
                 image::RgbaImage::from_raw(WIDTH as u32, HEIGHT as u32, pixmap.take()).unwrap();
             crate::snapshot::assert_matches(name, &image);

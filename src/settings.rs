@@ -105,10 +105,14 @@ pub enum Feature {
     Blur,
     Spotlight,
     Crop,
+    /// Reads QR codes in the selection.
+    Qr,
+    /// Blurs e-mails, phones and card numbers found in the selection.
+    Redact,
 }
 
 impl Feature {
-    pub const ALL: [Feature; 19] = [
+    pub const ALL: [Feature; 21] = [
         Feature::Recognize,
         Feature::Search,
         Feature::Print,
@@ -128,6 +132,8 @@ impl Feature {
         Feature::Blur,
         Feature::Spotlight,
         Feature::Crop,
+        Feature::Qr,
+        Feature::Redact,
     ];
 
     fn code(self) -> &'static str {
@@ -151,7 +157,15 @@ impl Feature {
             Feature::Blur => "blur",
             Feature::Spotlight => "spotlight",
             Feature::Crop => "crop",
+            Feature::Qr => "qr",
+            Feature::Redact => "redact",
         }
+    }
+
+    /// Tools most people don't need start turned off; the settings file
+    /// lists them under `enabled` once turned on.
+    fn off_by_default(self) -> bool {
+        matches!(self, Feature::Crop)
     }
 
     fn bit(self) -> u32 {
@@ -280,6 +294,14 @@ pub fn overlay_shortcut(
         .map(|(which, _)| *which)
 }
 
+/// The look of Snapt's windows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Theme {
+    System,
+    Light,
+    Dark,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     /// The keys of each `Shortcut`, as `global_hotkey` parses them, e.g.
@@ -300,6 +322,8 @@ pub struct Settings {
     pub save_on_copy: bool,
     /// Open a saved shot in the system's image viewer or editor.
     pub open_after_save: bool,
+    /// Draw the mouse pointer onto screenshots.
+    pub capture_cursor: bool,
     pub autostart: bool,
     /// Take over PrtSc (and on Windows Win+Shift+S) from the system's own screenshot tool.
     pub replace_system: ReplaceMode,
@@ -307,6 +331,8 @@ pub struct Settings {
     pub auto_update: bool,
     /// The interface language; `None` follows the system.
     pub language: Option<Lang>,
+    /// Light or dark windows; `System` follows the system.
+    pub theme: Theme,
     pub color: u32,
     pub stroke: f32,
     pub text_size: f32,
@@ -346,6 +372,7 @@ impl Default for Settings {
             quick_save: false,
             save_on_copy: false,
             open_after_save: false,
+            capture_cursor: false,
             autostart: false,
             // New Windows users are asked once whether Snapt should take over.
             replace_system: if cfg!(target_os = "windows") {
@@ -355,11 +382,15 @@ impl Default for Settings {
             },
             auto_update: true,
             language: None,
+            theme: Theme::System,
             color: 0xFF3B30,
             stroke: 3.0,
             text_size: 20.0,
             history: crate::history::DEFAULT_LIMIT,
-            disabled: Vec::new(),
+            disabled: Feature::ALL
+                .into_iter()
+                .filter(|f| f.off_by_default())
+                .collect(),
             file_name: DEFAULT_FILE_NAME.into(),
         }
     }
@@ -434,6 +465,13 @@ impl Settings {
 
     fn parse(text: &str) -> Self {
         let mut s = Self::default();
+        let (mut off, mut on) = (Vec::new(), Vec::new());
+        let codes = |value: &str| -> Vec<Feature> {
+            Feature::ALL
+                .into_iter()
+                .filter(|f| value.split(',').any(|v| v.trim() == f.code()))
+                .collect()
+        };
         for line in text.lines() {
             let line = line.trim();
             if line.starts_with('#') {
@@ -474,6 +512,7 @@ impl Settings {
                 "quick_save" => s.quick_save = value == "true",
                 "save_on_copy" => s.save_on_copy = value == "true",
                 "open_after_save" => s.open_after_save = value == "true",
+                "capture_cursor" => s.capture_cursor = value == "true",
                 "autostart" => s.autostart = value == "true",
                 "replace_system" => {
                     // Older versions wrote true or false.
@@ -485,6 +524,13 @@ impl Settings {
                 }
                 "auto_update" => s.auto_update = value != "false",
                 "language" => s.language = Lang::from_code(value),
+                "theme" => {
+                    s.theme = match value.to_ascii_lowercase().as_str() {
+                        "light" => Theme::Light,
+                        "dark" => Theme::Dark,
+                        _ => Theme::System,
+                    }
+                }
                 "color" => {
                     if let Ok(c) = u32::from_str_radix(value.trim_start_matches('#'), 16) {
                         s.color = c & 0xFFFFFF;
@@ -494,15 +540,21 @@ impl Settings {
                 "text_size" => s.text_size = value.parse().unwrap_or(s.text_size).clamp(10.0, 96.0),
                 "history" => s.history = value.parse().unwrap_or(s.history).min(50),
                 "file_name" if !value.is_empty() => s.file_name = value.into(),
-                "disabled" => {
-                    s.disabled = Feature::ALL
-                        .into_iter()
-                        .filter(|f| value.split(',').any(|v| v.trim() == f.code()))
-                        .collect()
-                }
+                "disabled" => off = codes(value),
+                "enabled" => on = codes(value),
                 _ => {}
             }
         }
+        s.disabled = Feature::ALL
+            .into_iter()
+            .filter(|f| {
+                if f.off_by_default() {
+                    !on.contains(f)
+                } else {
+                    off.contains(f)
+                }
+            })
+            .collect();
         s
     }
 
@@ -532,11 +584,18 @@ impl Settings {
         let _ = writeln!(t, "quick_save = {}", self.quick_save);
         let _ = writeln!(t, "save_on_copy = {}", self.save_on_copy);
         let _ = writeln!(t, "open_after_save = {}", self.open_after_save);
+        let _ = writeln!(t, "capture_cursor = {}", self.capture_cursor);
         let _ = writeln!(t, "autostart = {}", self.autostart);
         let _ = writeln!(t, "replace_system = {}", self.replace_system.code());
         let _ = writeln!(t, "auto_update = {}", self.auto_update);
         let language = self.language.map_or("auto", Lang::code);
         let _ = writeln!(t, "language = {language}");
+        let theme = match self.theme {
+            Theme::System => "system",
+            Theme::Light => "light",
+            Theme::Dark => "dark",
+        };
+        let _ = writeln!(t, "theme = {theme}");
         let _ = writeln!(t, "color = #{:06X}", self.color);
         let _ = writeln!(t, "stroke = {}", self.stroke);
         let _ = writeln!(t, "text_size = {}", self.text_size);
@@ -547,12 +606,25 @@ impl Settings {
             "# saved file names: %Y year, %m month, %d day, %H hour, %M minute, %S second"
         );
         let _ = writeln!(t, "file_name = {}", self.file_name);
-        let disabled: Vec<&str> = self.disabled.iter().map(|f| f.code()).collect();
+        let disabled: Vec<&str> = (self.disabled.iter())
+            .filter(|f| !f.off_by_default())
+            .map(|f| f.code())
+            .collect();
+        let enabled: Vec<&str> = (Feature::ALL.into_iter())
+            .filter(|f| f.off_by_default() && self.is_enabled(*f))
+            .map(Feature::code)
+            .collect();
         let _ = writeln!(
             t,
-            "# turned off: ocr, search, print, pin, scroll, record, picker"
+            "# turned off: ocr, search, print, pin, scroll, record, picker, pen, line, arrow,"
+        );
+        let _ = writeln!(
+            t,
+            "# rect, ellipse, marker, text, number, pixelate, blur, spotlight, qr, redact"
         );
         let _ = writeln!(t, "disabled = {}", disabled.join(", "));
+        let _ = writeln!(t, "# turned on, though off at first: crop");
+        let _ = writeln!(t, "enabled = {}", enabled.join(", "));
         t
     }
 }
@@ -696,10 +768,12 @@ mod tests {
             quick_save: true,
             save_on_copy: true,
             open_after_save: true,
+            capture_cursor: true,
             autostart: true,
             replace_system: ReplaceMode::Ask,
             auto_update: false,
             language: Some(Lang::Uk),
+            theme: Theme::Light,
             color: 0x00FF7F,
             stroke: 5.0,
             text_size: 28.0,
@@ -708,6 +782,17 @@ mod tests {
             disabled: vec![Feature::Pin, Feature::Picker, Feature::Blur, Feature::Crop],
         };
         assert_eq!(Settings::parse(&s.to_text()), s);
+    }
+
+    #[test]
+    fn crop_starts_off_and_can_be_turned_on() {
+        assert!(!Settings::default().is_enabled(Feature::Crop));
+        // Files from before crop had a switch keep it off too.
+        let old = Settings::parse("disabled = pin");
+        assert!(!old.is_enabled(Feature::Crop) && !old.is_enabled(Feature::Pin));
+        let on = Settings::parse("enabled = crop\ndisabled = ");
+        assert!(on.is_enabled(Feature::Crop));
+        assert_eq!(Settings::parse(&on.to_text()), on);
     }
 
     #[test]

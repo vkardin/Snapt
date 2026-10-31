@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use tray_icon::{
     Icon, TrayIcon, TrayIconBuilder,
-    menu::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu},
+    menu::{
+        AboutMetadata, Icon as MenuIcon, IconMenuItem, Menu, MenuId, PredefinedMenuItem, Submenu,
+    },
 };
 
 use crate::{
@@ -9,6 +11,8 @@ use crate::{
     i18n::{T, t},
     icon,
     settings::{Feature, Settings, Shortcut},
+    settings_window::UpdateStatus,
+    tray_menu::{Glyph, NATIVE_ICON, glyph_rgba, update_row},
 };
 
 /// The delays offered for a delayed screenshot, in seconds.
@@ -32,36 +36,71 @@ pub enum Command {
     ClearHistory,
     OpenFolder,
     Settings,
+    /// Look for a new version now.
+    CheckUpdates,
     Update,
+    /// Show the version and the website; the system menus have their own item for it.
+    About,
     Quit,
 }
 
-/// The tray icon and its menu, in the current interface language.
+/// Menu icons are drawn at twice their size on a Mac, for Retina screens.
+#[cfg(target_os = "macos")]
+const ICON_PX: u32 = 32;
+#[cfg(not(target_os = "macos"))]
+const ICON_PX: u32 = 16;
+
+fn menu_icon(glyph: Glyph) -> Option<MenuIcon> {
+    MenuIcon::from_rgba(glyph_rgba(glyph, ICON_PX, NATIVE_ICON), ICON_PX, ICON_PX).ok()
+}
+
+fn item(glyph: Glyph, text: &str, enabled: bool) -> IconMenuItem {
+    IconMenuItem::new(text, enabled, menu_icon(glyph), None)
+}
+
+/// The tray icon and its system menu, in the current interface language.
+///
+/// On Windows the system menu only stands in when Snapt's own menu (see
+/// `tray_menu`) can't open; a click on the icon opens that one instead.
 pub struct Tray {
     // Dropping the icon removes it from the tray.
-    _icon: TrayIcon,
-    capture: MenuItem,
-    pick: MenuItem,
-    scroll_page: MenuItem,
-    repeat: MenuItem,
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    icon: TrayIcon,
+    capture: IconMenuItem,
+    pick: IconMenuItem,
+    scroll_page: IconMenuItem,
+    full_screen: IconMenuItem,
+    repeat: IconMenuItem,
     history: Submenu,
+    update: IconMenuItem,
     commands: Vec<(MenuId, Command)>,
 }
 
 impl Tray {
-    /// `update` is the version to offer at the top of the menu, if one is out.
-    pub fn new(settings: &Settings, update: Option<&str>) -> Result<Self> {
-        let capture = MenuItem::new(t(T::TakeScreenshot), true, None);
-        let pick = MenuItem::new(t(T::PickColor), settings.is_enabled(Feature::Picker), None);
-        let scroll_page =
-            MenuItem::new(t(T::ScrollPage), settings.is_enabled(Feature::Scroll), None);
-        let full_screen = MenuItem::new(t(T::FullScreen), true, None);
-        let repeat = MenuItem::new(t(T::RepeatArea), false, None);
+    /// `status` decides the update item: a new version goes at the top of the menu.
+    pub fn new(settings: &Settings, status: &UpdateStatus) -> Result<Self> {
+        let capture = item(Glyph::Capture, t(T::TakeScreenshot), true);
+        let pick = item(
+            Glyph::Picker,
+            t(T::PickColor),
+            settings.is_enabled(Feature::Picker),
+        );
+        let scroll_page = item(
+            Glyph::ScrollPage,
+            t(T::ScrollPage),
+            settings.is_enabled(Feature::Scroll),
+        );
+        let full_screen = item(Glyph::FullScreen, t(T::FullScreen), true);
+        let repeat = item(Glyph::Repeat, t(T::RepeatArea), false);
         let delayed = Submenu::new(t(T::Delayed), true);
+        delayed.set_icon(menu_icon(Glyph::Timer));
         let history = Submenu::new(t(T::History), true);
-        let open_folder = MenuItem::new(t(T::OpenFolder), true, None);
-        let settings_item = MenuItem::new(t(T::SettingsMenu), true, None);
-        let quit = MenuItem::new(t(T::Quit), true, None);
+        history.set_icon(menu_icon(Glyph::History));
+        let open_folder = item(Glyph::Folder, t(T::OpenFolder), true);
+        let settings_item = item(Glyph::Settings, t(T::SettingsMenu), true);
+        let row = update_row(status);
+        let update = item(row.glyph, &row.text, row.command.is_some());
+        let quit = item(Glyph::Quit, t(T::Quit), true);
         let about = PredefinedMenuItem::about(
             Some(t(T::About)),
             Some(AboutMetadata {
@@ -76,21 +115,18 @@ impl Tray {
 
         let menu = Menu::new();
         let mut commands = Vec::new();
-        if let Some(version) = update {
-            let item = MenuItem::new(t(T::TrayUpdate).replace("{}", version), true, None);
-            menu.append_items(&[&item, &PredefinedMenuItem::separator()])
-                .context("failed to build the tray menu")?;
-            commands.push((item.id().clone(), Command::Update));
+        let failed = "failed to build the tray menu";
+        if row.top {
+            menu.append_items(&[&update, &PredefinedMenuItem::separator()])
+                .context(failed)?;
         }
         for seconds in DELAYS {
-            let item = MenuItem::new(
-                t(T::Seconds).replace("{}", &seconds.to_string()),
+            let item = item(
+                Glyph::Timer,
+                &t(T::Seconds).replace("{}", &seconds.to_string()),
                 true,
-                None,
             );
-            delayed
-                .append(&item)
-                .context("failed to build the tray menu")?;
+            delayed.append(&item).context(failed)?;
             commands.push((item.id().clone(), Command::Delay(seconds)));
         }
         menu.append_items(&[
@@ -104,11 +140,13 @@ impl Tray {
             &PredefinedMenuItem::separator(),
             &open_folder,
             &settings_item,
-            &PredefinedMenuItem::separator(),
-            &about,
-            &quit,
         ])
-        .context("failed to build the tray menu")?;
+        .context(failed)?;
+        if !row.top {
+            menu.append(&update).context(failed)?;
+        }
+        menu.append_items(&[&PredefinedMenuItem::separator(), &about, &quit])
+            .context(failed)?;
 
         commands.extend([
             (capture.id().clone(), Command::Capture),
@@ -123,28 +161,55 @@ impl Tray {
 
         let icon = Icon::from_rgba(icon::rgba(), icon::SIZE, icon::SIZE)
             .context("failed to load the tray icon")?;
-        let tray = TrayIconBuilder::new()
+        let tooltip = match status {
+            UpdateStatus::Available(version) => t(T::TrayUpdate).replace("{}", version),
+            _ => "Snapt".into(),
+        };
+        let builder = TrayIconBuilder::new()
             .with_id("snapt")
-            .with_tooltip(match update {
-                Some(version) => t(T::TrayUpdate).replace("{}", version),
-                None => "Snapt".into(),
-            })
+            .with_tooltip(tooltip)
             .with_icon(icon)
-            .with_menu(Box::new(menu))
-            .build()
-            .context("failed to create the tray icon")?;
+            .with_menu(Box::new(menu));
+        // Clicks open Snapt's own menu; the app shows this one only if that fails.
+        #[cfg(target_os = "windows")]
+        let builder = builder
+            .with_menu_on_left_click(false)
+            .with_menu_on_right_click(false);
+        let tray = builder.build().context("failed to create the tray icon")?;
 
-        let tray = Self {
-            _icon: tray,
+        let mut tray = Self {
+            icon: tray,
             capture,
             pick,
             scroll_page,
+            full_screen,
             repeat,
             history,
+            update,
             commands,
         };
+        tray.set_update(status);
         tray.sync(settings);
         Ok(tray)
+    }
+
+    /// Opens the system menu at the tray icon.
+    #[cfg(target_os = "windows")]
+    pub fn show_menu(&self) {
+        self.icon.show_menu();
+    }
+
+    /// Shows how the update check went on the update item.
+    pub fn set_update(&mut self, status: &UpdateStatus) {
+        let row = update_row(status);
+        self.update.set_text(&row.text);
+        self.update.set_icon(menu_icon(row.glyph));
+        self.update.set_enabled(row.command.is_some());
+        let id = self.update.id().clone();
+        self.commands.retain(|(i, _)| *i != id);
+        if let Some(command) = row.command {
+            self.commands.push((id, command));
+        }
     }
 
     /// Lists `entries` in the history submenu, newest first.
@@ -155,14 +220,14 @@ impl Tray {
         let now = chrono::Local::now();
         let mut items = Vec::new();
         for (i, entry) in entries.iter().enumerate() {
-            let item = MenuItem::new(entry.label(now), true, None);
+            let item = item(Glyph::Image, &entry.label(now), true);
             self.commands.push((item.id().clone(), Command::History(i)));
             items.push(item);
         }
         if items.is_empty() {
-            items.push(MenuItem::new(t(T::HistoryEmpty), false, None));
+            items.push(IconMenuItem::new(t(T::HistoryEmpty), false, None, None));
         }
-        let clear = MenuItem::new(t(T::ClearHistory), !entries.is_empty(), None);
+        let clear = item(Glyph::Clear, t(T::ClearHistory), !entries.is_empty());
         self.commands
             .push((clear.id().clone(), Command::ClearHistory));
         let separator = PredefinedMenuItem::separator();
@@ -186,21 +251,20 @@ impl Tray {
 
     /// Shows the current shortcuts next to their items.
     pub fn sync(&self, settings: &Settings) {
-        self.capture.set_text(format!(
-            "{}\t{}",
-            t(T::TakeScreenshot),
-            hotkey_label(settings.shortcut(Shortcut::Capture))
-        ));
-        self.pick.set_text(format!(
-            "{}\t{}",
-            t(T::PickColor),
-            hotkey_label(settings.shortcut(Shortcut::Pick))
-        ));
-        self.scroll_page.set_text(format!(
-            "{}\t{}",
-            t(T::ScrollPage),
-            hotkey_label(settings.shortcut(Shortcut::ScrollPage))
-        ));
+        for (item, text, which) in [
+            (&self.capture, T::TakeScreenshot, Shortcut::Capture),
+            (&self.pick, T::PickColor, Shortcut::Pick),
+            (&self.scroll_page, T::ScrollPage, Shortcut::ScrollPage),
+            (&self.full_screen, T::FullScreen, Shortcut::FullScreen),
+            (&self.repeat, T::RepeatArea, Shortcut::RepeatArea),
+        ] {
+            let keys = settings.shortcut(which);
+            if keys.is_empty() {
+                item.set_text(t(text));
+            } else {
+                item.set_text(format!("{}\t{}", t(text), hotkey_label(keys)));
+            }
+        }
         self.scroll_page
             .set_enabled(settings.is_enabled(Feature::Scroll));
     }

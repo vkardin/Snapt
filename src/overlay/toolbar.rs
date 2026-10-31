@@ -17,10 +17,14 @@ pub enum Button {
     Tool(Tool),
     /// Cuts the selection down to a rectangle drawn inside it.
     Crop,
+    /// Blurs the e-mails, phones and card numbers found in the selection.
+    Redact,
     Color,
     Undo,
     Close,
     Recognize,
+    /// Copies what the QR codes in the selection say.
+    Qr,
     Search,
     Print,
     Pin,
@@ -32,7 +36,7 @@ pub enum Button {
     Eyedropper,
 }
 
-const TOOLS: [Button; 15] = [
+const TOOLS: [Button; 16] = [
     Button::Tool(Tool::Pen),
     Button::Tool(Tool::Line),
     Button::Tool(Tool::Arrow),
@@ -44,6 +48,7 @@ const TOOLS: [Button; 15] = [
     Button::Tool(Tool::Pixelate),
     Button::Tool(Tool::Blur),
     Button::Tool(Tool::Spotlight),
+    Button::Redact,
     Button::Crop,
     Button::Color,
     Button::Undo,
@@ -75,6 +80,7 @@ fn tools() -> Vec<Button> {
         .filter(|b| match b {
             Button::Tool(tool) => enabled(tool_feature(*tool)),
             Button::Crop => enabled(Feature::Crop),
+            Button::Redact => enabled(Feature::Redact),
             _ => true,
         })
         .collect()
@@ -87,6 +93,7 @@ fn actions() -> Vec<Button> {
         .into_iter()
         .filter(|b| match b {
             Button::Recognize => enabled(Feature::Recognize),
+            Button::Qr => enabled(Feature::Qr),
             Button::Search => enabled(Feature::Search),
             Button::Print => enabled(Feature::Print),
             Button::Pin => enabled(Feature::Pin),
@@ -97,8 +104,9 @@ fn actions() -> Vec<Button> {
         .collect()
 }
 
-const ACTIONS: [Button; 8] = [
+const ACTIONS: [Button; 9] = [
     Button::Recognize,
+    Button::Qr,
     Button::Search,
     Button::Print,
     Button::Pin,
@@ -133,6 +141,8 @@ impl Button {
             Button::Tool(Tool::Text) => (T::Text, "T".into()),
             Button::Tool(Tool::Spotlight) => (T::Spotlight, "H".into()),
             Button::Crop => (T::Crop, "C".into()),
+            Button::Redact => (T::HidePersonal, "D".into()),
+            Button::Qr => (T::ReadQr, "Q".into()),
             Button::Color => return t(T::Color).into(),
             Button::Undo => (T::Undo, format!("{MOD}+Z")),
             Button::Close => (T::Close, "Esc".into()),
@@ -492,9 +502,22 @@ fn inset(r: Option<SkRect>, by: f32) -> Option<SkRect> {
 
 /// Draws a button's icon on a 16 × 16 grid mapped through `transform`.
 fn icon(pixmap: &mut Pixmap, button: Button, look: &Look, transform: Transform) {
-    let color = look.color;
+    draw_icon(pixmap, button, 0xF4F4F6, look.color, look.fill, transform);
+}
+
+/// Draws `button`'s icon in `ink`, on a 16 × 16 grid mapped through
+/// `transform`; the settings window shows the editor's tools with it too.
+pub fn draw_icon(
+    pixmap: &mut Pixmap,
+    button: Button,
+    ink: u32,
+    color: u32,
+    fill: bool,
+    transform: Transform,
+) {
+    let [ir, ig, ib] = rgb(ink);
     let mut paint = Paint::default();
-    paint.set_color_rgba8(0xF4, 0xF4, 0xF6, 255);
+    paint.set_color_rgba8(ir, ig, ib, 255);
     paint.anti_alias = true;
     let stroke = Stroke {
         width: 1.6,
@@ -536,7 +559,7 @@ fn icon(pixmap: &mut Pixmap, button: Button, look: &Look, transform: Transform) 
             p.cubic_to(12.0, 7.0, 8.0, 2.5, 8.0, 2.5);
             p.close();
             let mut faint = paint.clone();
-            faint.set_color_rgba8(0xF4, 0xF4, 0xF6, 90);
+            faint.set_color_rgba8(ir, ig, ib, 90);
             if let Some(dots) = PathBuilder::from_circle(8.0, 9.5, 1.6) {
                 pixmap.fill_path(&dots, &faint, FillRule::Winding, transform, None);
             }
@@ -563,7 +586,7 @@ fn icon(pixmap: &mut Pixmap, button: Button, look: &Look, transform: Transform) 
             wide.move_to(4.0, 11.0);
             wide.line_to(12.0, 3.0);
             let mut faint = paint.clone();
-            faint.set_color_rgba8(0xF4, 0xF4, 0xF6, 110);
+            faint.set_color_rgba8(ir, ig, ib, 110);
             let thick = Stroke {
                 width: 5.0,
                 line_cap: LineCap::Square,
@@ -586,7 +609,7 @@ fn icon(pixmap: &mut Pixmap, button: Button, look: &Look, transform: Transform) 
         Button::Tool(Tool::Spotlight) => {
             // A bright square in a dimmed frame.
             let mut faint = paint.clone();
-            faint.set_color_rgba8(0xF4, 0xF4, 0xF6, 80);
+            faint.set_color_rgba8(ir, ig, ib, 80);
             let mut frame = PathBuilder::new();
             frame.push_rect(SkRect::from_xywh(1.5, 1.5, 13.0, 13.0).unwrap());
             frame.push_rect(SkRect::from_xywh(5.0, 5.0, 6.0, 6.0).unwrap());
@@ -594,6 +617,30 @@ fn icon(pixmap: &mut Pixmap, button: Button, look: &Look, transform: Transform) 
                 pixmap.fill_path(&path, &faint, FillRule::EvenOdd, transform, None);
             }
             p.push_rect(SkRect::from_xywh(5.0, 5.0, 6.0, 6.0).unwrap());
+        }
+        Button::Redact => {
+            // An eye, struck through.
+            p.move_to(1.5, 8.0);
+            p.cubic_to(3.5, 4.5, 5.6, 3.5, 8.0, 3.5);
+            p.cubic_to(10.4, 3.5, 12.5, 4.5, 14.5, 8.0);
+            p.cubic_to(12.5, 11.5, 10.4, 12.5, 8.0, 12.5);
+            p.cubic_to(5.6, 12.5, 3.5, 11.5, 1.5, 8.0);
+            p.close();
+            p.push_circle(8.0, 8.0, 2.0);
+            p.move_to(2.5, 14.0);
+            p.line_to(13.5, 2.0);
+        }
+        Button::Qr => {
+            // Three finder squares and a few modules.
+            for (x, y) in [(2.0, 2.0), (10.0, 2.0), (2.0, 10.0)] {
+                p.push_rect(SkRect::from_xywh(x, y, 4.0, 4.0).unwrap());
+            }
+            for (x, y) in [(9.6, 9.6), (12.0, 12.0)] {
+                if let Some(module) = SkRect::from_xywh(x, y, 2.6, 2.6) {
+                    let path = PathBuilder::from_rect(module);
+                    pixmap.fill_path(&path, &paint, FillRule::Winding, transform, None);
+                }
+            }
         }
         Button::Crop => {
             // Two corner brackets that cross.
@@ -723,7 +770,7 @@ fn icon(pixmap: &mut Pixmap, button: Button, look: &Look, transform: Transform) 
         }
     }
     if let Some(path) = p.finish() {
-        let filled = matches!(button, Button::Tool(Tool::Rect | Tool::Ellipse)) && look.fill;
+        let filled = matches!(button, Button::Tool(Tool::Rect | Tool::Ellipse)) && fill;
         if filled {
             pixmap.fill_path(&path, &paint, FillRule::Winding, transform, None);
         }
