@@ -114,6 +114,8 @@ pub enum Shortcut {
     Pick,
     FullScreen,
     RepeatArea,
+    /// Pins the newest screenshot from the history.
+    PinLast,
     Recognize,
     Scroll,
     Record,
@@ -136,11 +138,12 @@ macro_rules! cmd {
 }
 
 impl Shortcut {
-    pub const ALL: [Shortcut; 10] = [
+    pub const ALL: [Shortcut; 11] = [
         Shortcut::Capture,
         Shortcut::Pick,
         Shortcut::FullScreen,
         Shortcut::RepeatArea,
+        Shortcut::PinLast,
         Shortcut::Recognize,
         Shortcut::Scroll,
         Shortcut::Record,
@@ -153,7 +156,11 @@ impl Shortcut {
     pub fn is_global(self) -> bool {
         matches!(
             self,
-            Shortcut::Capture | Shortcut::Pick | Shortcut::FullScreen | Shortcut::RepeatArea
+            Shortcut::Capture
+                | Shortcut::Pick
+                | Shortcut::FullScreen
+                | Shortcut::RepeatArea
+                | Shortcut::PinLast
         )
     }
 
@@ -162,7 +169,7 @@ impl Shortcut {
         match self {
             Shortcut::Capture => DEFAULT_HOTKEY,
             Shortcut::Pick => DEFAULT_PICK_HOTKEY,
-            Shortcut::FullScreen | Shortcut::RepeatArea => "",
+            Shortcut::FullScreen | Shortcut::RepeatArea | Shortcut::PinLast => "",
             Shortcut::Recognize => cmd!("Shift+C"),
             Shortcut::Scroll => cmd!("Shift+S"),
             Shortcut::Record => cmd!("Shift+R"),
@@ -179,6 +186,7 @@ impl Shortcut {
             Shortcut::Pick => "pick_hotkey",
             Shortcut::FullScreen => "full_screen_hotkey",
             Shortcut::RepeatArea => "repeat_area_hotkey",
+            Shortcut::PinLast => "pin_last_hotkey",
             Shortcut::Recognize => "copy_text_key",
             Shortcut::Scroll => "scroll_key",
             Shortcut::Record => "record_key",
@@ -208,7 +216,7 @@ pub fn overlay_shortcut(
 pub struct Settings {
     /// The keys of each `Shortcut`, as `global_hotkey` parses them, e.g.
     /// `Ctrl+Shift+S`; empty for none.
-    pub shortcuts: [String; 10],
+    pub shortcuts: [String; 11],
     pub color_format: ColorFormat,
     pub folder: PathBuf,
     pub format: Format,

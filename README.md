@@ -28,10 +28,13 @@ No accounts, no cloud, a few megabytes on disk.
 ## Features
 
 - Select an area on any monitor, or a whole window with one click, HiDPI aware, with
-  handles to move and resize it and a magnifier for pixel-exact edges.
+  handles to move and resize it and a magnifier for pixel-exact edges. Nudge it with the
+  arrow keys, or type its exact size, such as `1280x720`.
 - Draw on it: pen, line, arrow, rectangle, ellipse, marker, text and numbered steps, in
   any color, or one picked from the screen with the eyedropper. Pixelate or blur what should
-  stay private, and fill rectangles and ellipses with color. Click a shape to move it, or delete it with `Delete`.
+  stay private, put what matters in a spotlight that dims the rest, and fill rectangles and
+  ellipses with color. Crop the selection to a smaller area without losing the drawings.
+  Click a shape to move it, or delete it with `Delete`.
 - A color picker on its own shortcut (`Ctrl+Alt+C`) or in the tray: a magnifier shows the
   pixels under the cursor and a click copies the color as HEX or RGB.
 - Copy the text in the selection, recognized by the system's own OCR (English, Russian,
@@ -41,7 +44,8 @@ No accounts, no cloud, a few megabytes on disk.
 - Scrolling screenshots (experimental): scroll a long page and Snapt glues it into one image.
 - Record an area as a GIF, or as an MP4 when [ffmpeg](https://ffmpeg.org) is installed.
 - From the tray: copy the full screen in one click, take a screenshot after 3, 5 or 10
-  seconds, select the last area again, and reopen your recent screenshots.
+  seconds, select the last area again, and reopen your recent screenshots, or pin the
+  last one from anywhere with a shortcut of your choice.
 - A settings window with three pages: general options, a shortcut for every action, and
   switches to turn off the features you don't use.
 - In English, Russian and Ukrainian, and it updates itself from GitHub Releases.
@@ -78,7 +82,10 @@ The screen freezes, then:
 | Select a window | Point at it and click |
 | Move or resize it | Drag inside the selection or by its handles |
 | Select the whole screen | `Ctrl+A` |
-| Pick a drawing tool | Click it in the panel, or press `P` pen, `L` line, `A` arrow, `R` rectangle, `E` ellipse, `M` marker, `T` text, `N` numbered step, `B` pixelate, `U` blur |
+| Pick a drawing tool | Click it in the panel, or press `P` pen, `L` line, `A` arrow, `R` rectangle, `E` ellipse, `M` marker, `T` text, `N` numbered step, `B` pixelate, `U` blur, `H` spotlight |
+| Crop the selection | `C`, then drag the new area inside it; drawings stay |
+| Type an exact size | Type digits, `X` and digits again, then `Enter`, e.g. `800x600` (image pixels; `Esc` gives up) |
+| Nudge the selection | Arrow keys move it by a pixel, with `Shift` by 10; with `Alt` they resize it |
 | Filled rectangles and ellipses | `F` switches filling on and off |
 | Move or delete a shape | With no tool picked, drag it, or click it and press `Delete` |
 | Straight lines, squares | Hold `Shift` while drawing |
@@ -117,7 +124,8 @@ The tray menu also has:
 - **Copy full screen**: all monitors at once, straight to the clipboard;
 - **Repeat last area**: opens the screenshot with the area you selected last time;
 - **Screenshot with delay**: in 3, 5 or 10 seconds, to catch menus and tooltips;
-- **Recent screenshots**: the last 10, kept between restarts; click one to pin it.
+- **Recent screenshots**: the last 10, kept between restarts; click one to pin it. Set a
+  **Pin last screenshot** shortcut in the settings to pin the newest one from anywhere.
 
 ### Settings
 
