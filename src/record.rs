@@ -334,6 +334,7 @@ mod tests {
         let monitor = xcap::Monitor::all().unwrap().remove(0);
         let region = Region {
             monitor: (monitor.x().unwrap(), monitor.y().unwrap()),
+            scale: 1.0,
             x: 10,
             y: 10,
             w: 101,

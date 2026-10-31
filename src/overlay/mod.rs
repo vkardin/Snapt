@@ -41,6 +41,17 @@ use toolbar::{Button, Look, Target, Toolbar};
 
 pub use annotate::Tool;
 
+/// What the overlay is opened for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Purpose {
+    /// A screenshot, edited before it goes out.
+    Shot,
+    /// Only to pick a color: no selection, the click copies and closes.
+    Pick,
+    /// A scrolling screenshot of a page: selecting the page starts it.
+    ScrollPage,
+}
+
 /// What the user decided to do with the selection.
 pub enum Outcome {
     Copy(RgbaImage),
@@ -110,6 +121,8 @@ pub struct Overlay {
     picking: bool,
     /// Opened only to pick a color: no selection, the click copies and closes.
     pick_only: bool,
+    /// Opened for a scrolling screenshot: selecting an area or a window starts it.
+    scroll_page: bool,
     format: ColorFormat,
     /// A newly selected area is copied right away, without the editor.
     copy_area: bool,
@@ -130,6 +143,8 @@ struct Screen {
     origin: PhysicalPosition<i32>,
     /// The same corner as the capture API reports it.
     shot_origin: (i32, i32),
+    /// Image pixels per unit of `shot_origin`.
+    shot_scale: f32,
     image: RgbaImage,
     frame: Frame,
     selection: Selection,
@@ -174,16 +189,16 @@ struct Layer {
 impl Overlay {
     /// Opens one overlay window per monitor, each showing its shot, with
     /// `area` already selected when it is given and its monitor is still there.
-    /// With `pick_only` it is just the color picker, copying colors in the
-    /// format `settings` ask for.
+    /// As the color picker it copies colors in the format `settings` ask for.
     pub fn open(
         event_loop: &ActiveEventLoop,
         shots: Vec<Shot>,
         style: Style,
         area: Option<Area>,
-        pick_only: bool,
+        purpose: Purpose,
         settings: &Settings,
     ) -> Result<Self> {
+        let pick_only = purpose == Purpose::Pick;
         let context = softbuffer::Context::new(event_loop.owned_display_handle())
             .map_err(|e| anyhow::anyhow!("failed to start the renderer: {e}"))?;
 
@@ -209,6 +224,7 @@ impl Overlay {
             palette: false,
             picking: pick_only,
             pick_only,
+            scroll_page: purpose == Purpose::ScrollPage,
             format: settings.color_format,
             copy_area: settings.copy_on_select,
             copy_window: settings.copy_on_select && !settings.window_opens_editor,
@@ -296,7 +312,10 @@ impl Overlay {
         let style = self.style;
         let palette = self.palette;
         let picker = self.picking.then_some(self.format);
-        let status = self.status.clone();
+        let status = self.status.clone().or_else(|| {
+            // Says what to do until something is selected.
+            (self.scroll_page && self.area().is_none()).then(|| t(T::ScrollPageHint).to_string())
+        });
         let pick_only = self.pick_only;
         self.screens[index].redraw(&style, palette, picker, pick_only, status.as_deref());
     }
@@ -396,6 +415,9 @@ impl Overlay {
                         copy = self.copy_window;
                     }
                     screen.snap = None;
+                    if self.scroll_page && screen.selection.rect().is_some() {
+                        return self.start_scroll(index, crate::scroll::Mode::Scroll);
+                    }
                     // Copying right away skips the editor, so only a fresh
                     // selection with nothing drawn yet goes straight out.
                     if copy && creating && screen.canvas.is_empty() {
@@ -545,13 +567,29 @@ impl Overlay {
             Target::Button(Button::Search) => return screen.output().map(Outcome::Search),
             Target::Button(Button::Print) => return screen.output().map(Outcome::Print),
             Target::Button(Button::Pin) => return screen.pin(),
-            Target::Button(Button::Scroll) => return screen.scroll(crate::scroll::Mode::Scroll),
-            Target::Button(Button::Record) => return screen.scroll(crate::scroll::Mode::Record),
+            Target::Button(Button::Scroll) => {
+                return self.start_scroll(index, crate::scroll::Mode::Scroll);
+            }
+            Target::Button(Button::Record) => {
+                return self.start_scroll(index, crate::scroll::Mode::Record);
+            }
             Target::Button(Button::Copy) => return screen.output().map(Outcome::Copy),
             Target::Button(Button::Save) => return screen.output().map(Outcome::Save),
         }
         self.request_redraw_all();
         None
+    }
+
+    /// Starts a scrolling screenshot or a recording of the selection, or of
+    /// the window under the mouse; with neither, says to select one.
+    fn start_scroll(&mut self, index: usize, mode: crate::scroll::Mode) -> Option<Outcome> {
+        let screen = &mut self.screens[index];
+        screen.commit_text();
+        let outcome = screen.scroll(mode);
+        if outcome.is_none() {
+            self.set_status(Some(t(T::ScrollSelectFirst).into()));
+        }
+        outcome
     }
 
     /// Sets the drawing color, for the text being typed too.
@@ -672,10 +710,10 @@ impl Overlay {
                     None
                 }
                 Shortcut::Scroll if on(Feature::Scroll) => {
-                    screen.scroll(crate::scroll::Mode::Scroll)
+                    self.start_scroll(index, crate::scroll::Mode::Scroll)
                 }
                 Shortcut::Record if on(Feature::Record) => {
-                    screen.scroll(crate::scroll::Mode::Record)
+                    self.start_scroll(index, crate::scroll::Mode::Record)
                 }
                 Shortcut::Pin if on(Feature::Pin) => screen.pin(),
                 Shortcut::Copy => Some(Outcome::Copy(screen.output_or_all())),
@@ -771,7 +809,7 @@ impl Screen {
             windows,
             x,
             y,
-            ..
+            scale,
         } = shot;
         let attributes = Window::default_attributes()
             .with_title("Snapt")
@@ -802,6 +840,7 @@ impl Screen {
             surface,
             origin: monitor.position(),
             shot_origin: (x, y),
+            shot_scale: scale,
             frame: Frame::new(&image, size.width.max(1), size.height.max(1)),
             selection: Selection::new(size.width as i32, size.height as i32),
             window,
@@ -1349,7 +1388,7 @@ impl Screen {
     /// Starts a scrolling screenshot or a recording of the selection, with
     /// the panel below it, or above when there is no room below.
     fn scroll(&mut self, mode: crate::scroll::Mode) -> Option<Outcome> {
-        let rect = self.selection.rect()?;
+        let rect = self.selection.rect().or(self.snap)?;
         let (x, y, w, h) = self.to_image(rect)?;
         let gap = (8.0 * self.window.scale_factor()) as i32;
         let panel_h = (60.0 * self.window.scale_factor()) as i32;
@@ -1362,6 +1401,7 @@ impl Screen {
         Some(Outcome::Scroll {
             region: crate::scroll::Region {
                 monitor: self.shot_origin,
+                scale: self.shot_scale,
                 x,
                 y,
                 w,

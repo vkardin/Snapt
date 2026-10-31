@@ -19,6 +19,8 @@ pub const DELAYS: [u64; 3] = [3, 5, 10];
 pub enum Command {
     Capture,
     PickColor,
+    /// Open the overlay for a scrolling screenshot of a page.
+    ScrollPage,
     /// Copy every screen at once, without the overlay.
     FullScreen,
     /// Open the overlay with the last selected area already selected.
@@ -40,6 +42,7 @@ pub struct Tray {
     _icon: TrayIcon,
     capture: MenuItem,
     pick: MenuItem,
+    scroll_page: MenuItem,
     repeat: MenuItem,
     history: Submenu,
     commands: Vec<(MenuId, Command)>,
@@ -50,6 +53,8 @@ impl Tray {
     pub fn new(settings: &Settings, update: Option<&str>) -> Result<Self> {
         let capture = MenuItem::new(t(T::TakeScreenshot), true, None);
         let pick = MenuItem::new(t(T::PickColor), settings.is_enabled(Feature::Picker), None);
+        let scroll_page =
+            MenuItem::new(t(T::ScrollPage), settings.is_enabled(Feature::Scroll), None);
         let full_screen = MenuItem::new(t(T::FullScreen), true, None);
         let repeat = MenuItem::new(t(T::RepeatArea), false, None);
         let delayed = Submenu::new(t(T::Delayed), true);
@@ -91,6 +96,7 @@ impl Tray {
         menu.append_items(&[
             &capture,
             &pick,
+            &scroll_page,
             &full_screen,
             &repeat,
             &delayed,
@@ -107,6 +113,7 @@ impl Tray {
         commands.extend([
             (capture.id().clone(), Command::Capture),
             (pick.id().clone(), Command::PickColor),
+            (scroll_page.id().clone(), Command::ScrollPage),
             (full_screen.id().clone(), Command::FullScreen),
             (repeat.id().clone(), Command::RepeatArea),
             (open_folder.id().clone(), Command::OpenFolder),
@@ -131,6 +138,7 @@ impl Tray {
             _icon: tray,
             capture,
             pick,
+            scroll_page,
             repeat,
             history,
             commands,
@@ -188,6 +196,13 @@ impl Tray {
             t(T::PickColor),
             hotkey_label(settings.shortcut(Shortcut::Pick))
         ));
+        self.scroll_page.set_text(format!(
+            "{}\t{}",
+            t(T::ScrollPage),
+            hotkey_label(settings.shortcut(Shortcut::ScrollPage))
+        ));
+        self.scroll_page
+            .set_enabled(settings.is_enabled(Feature::Scroll));
     }
 }
 

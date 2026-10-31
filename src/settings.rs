@@ -178,6 +178,8 @@ pub enum Shortcut {
     RepeatArea,
     /// Pins the newest screenshot from the history.
     PinLast,
+    /// Opens the screenshot for a scrolling screenshot of a page.
+    ScrollPage,
     Recognize,
     Scroll,
     Record,
@@ -200,12 +202,13 @@ macro_rules! cmd {
 }
 
 impl Shortcut {
-    pub const ALL: [Shortcut; 11] = [
+    pub const ALL: [Shortcut; 12] = [
         Shortcut::Capture,
         Shortcut::Pick,
         Shortcut::FullScreen,
         Shortcut::RepeatArea,
         Shortcut::PinLast,
+        Shortcut::ScrollPage,
         Shortcut::Recognize,
         Shortcut::Scroll,
         Shortcut::Record,
@@ -223,6 +226,7 @@ impl Shortcut {
                 | Shortcut::FullScreen
                 | Shortcut::RepeatArea
                 | Shortcut::PinLast
+                | Shortcut::ScrollPage
         )
     }
 
@@ -232,6 +236,7 @@ impl Shortcut {
             Shortcut::Capture => DEFAULT_HOTKEY,
             Shortcut::Pick => DEFAULT_PICK_HOTKEY,
             Shortcut::FullScreen | Shortcut::RepeatArea | Shortcut::PinLast => "",
+            Shortcut::ScrollPage => DEFAULT_SCROLL_PAGE_HOTKEY,
             Shortcut::Recognize => cmd!("Shift+C"),
             Shortcut::Scroll => cmd!("Shift+S"),
             Shortcut::Record => cmd!("Shift+R"),
@@ -249,6 +254,7 @@ impl Shortcut {
             Shortcut::FullScreen => "full_screen_hotkey",
             Shortcut::RepeatArea => "repeat_area_hotkey",
             Shortcut::PinLast => "pin_last_hotkey",
+            Shortcut::ScrollPage => "scroll_page_hotkey",
             Shortcut::Recognize => "copy_text_key",
             Shortcut::Scroll => "scroll_key",
             Shortcut::Record => "record_key",
@@ -278,7 +284,7 @@ pub fn overlay_shortcut(
 pub struct Settings {
     /// The keys of each `Shortcut`, as `global_hotkey` parses them, e.g.
     /// `Ctrl+Shift+S`; empty for none.
-    pub shortcuts: [String; 11],
+    pub shortcuts: [String; 12],
     pub color_format: ColorFormat,
     pub folder: PathBuf,
     pub format: Format,
@@ -321,6 +327,11 @@ pub const DEFAULT_HOTKEY: &str = "Cmd+Shift+9";
 #[cfg(not(target_os = "macos"))]
 pub const DEFAULT_HOTKEY: &str = "PrintScreen";
 pub const DEFAULT_PICK_HOTKEY: &str = "Ctrl+Alt+C";
+/// A scrolling screenshot of a page: next to the screenshot key.
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SCROLL_PAGE_HOTKEY: &str = "Cmd+Shift+0";
+#[cfg(not(target_os = "macos"))]
+pub const DEFAULT_SCROLL_PAGE_HOTKEY: &str = "Ctrl+Shift+PrintScreen";
 
 impl Default for Settings {
     fn default() -> Self {

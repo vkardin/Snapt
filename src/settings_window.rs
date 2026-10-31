@@ -795,6 +795,7 @@ fn shortcuts(
             Shortcut::FullScreen => t(T::FullScreen),
             Shortcut::RepeatArea => t(T::RepeatArea),
             Shortcut::PinLast => t(T::PinLast),
+            Shortcut::ScrollPage => t(T::ScrollPage),
             Shortcut::Recognize => t(T::Recognize),
             Shortcut::Scroll => t(T::Scroll),
             Shortcut::Record => t(T::Record),

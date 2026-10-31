@@ -20,6 +20,7 @@ mod overlay;
 mod paint;
 mod pin;
 mod platform;
+mod pointer;
 #[cfg(target_os = "linux")]
 mod portal;
 mod record;

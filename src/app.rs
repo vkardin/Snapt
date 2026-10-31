@@ -15,7 +15,7 @@ use crate::{
     i18n::{self, T, t},
     instance::Request,
     ocr, output,
-    overlay::{Area, Outcome, Overlay, Style},
+    overlay::{Area, Outcome, Overlay, Purpose, Style},
     pin::{Pin, PinAction},
     platform,
     scroll::{Finished, Scroll, ScrollAction},
@@ -38,8 +38,10 @@ pub enum UserEvent {
     UpdateDownloaded(Result<std::path::PathBuf, String>),
     /// Text recognition on a selection finished.
     Recognized(Result<String, ocr::Error>),
-    /// The scrolling screenshot grew.
+    /// The scrolling screenshot grew, or its panel has news.
     ScrollGrew,
+    /// The scrolling screenshot reached the end of the page.
+    ScrollEnded,
     /// A system screenshot key was caught while Snapt replaces the system tool.
     #[cfg(target_os = "windows")]
     SystemKey(crate::windows_shot::SystemKey),
@@ -212,12 +214,15 @@ impl App {
     /// Runs a global shortcut.
     fn run_shortcut(&mut self, event_loop: &ActiveEventLoop, which: Shortcut) {
         match which {
-            Shortcut::Capture => self.start_capture(event_loop, None, false),
-            Shortcut::Pick => self.start_capture(event_loop, None, true),
+            Shortcut::Capture => self.start_capture(event_loop, None, Purpose::Shot),
+            Shortcut::Pick => self.start_capture(event_loop, None, Purpose::Pick),
             Shortcut::FullScreen => self.copy_full_screen(),
-            Shortcut::RepeatArea => self.start_capture(event_loop, self.last_area, false),
+            Shortcut::RepeatArea => self.start_capture(event_loop, self.last_area, Purpose::Shot),
             Shortcut::PinLast if !self.history.entries().is_empty() => {
                 self.pin_from_history(event_loop, 0)
+            }
+            Shortcut::ScrollPage if self.settings.is_enabled(Feature::Scroll) => {
+                self.start_capture(event_loop, None, Purpose::ScrollPage)
             }
             _ => {}
         }
@@ -331,7 +336,12 @@ impl App {
 
     /// Freezes the screens and opens the selection overlay, with `area`
     /// already selected when given, or with `pick` only the color picker.
-    fn start_capture(&mut self, event_loop: &ActiveEventLoop, area: Option<Area>, pick: bool) {
+    fn start_capture(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        area: Option<Area>,
+        purpose: Purpose,
+    ) {
         if self.overlay.is_some() {
             return;
         }
@@ -339,8 +349,9 @@ impl App {
             return;
         }
         let settings = &self.settings;
-        let result = capture::all_monitors()
-            .and_then(|shots| Overlay::open(event_loop, shots, self.style, area, pick, settings));
+        let result = capture::all_monitors().and_then(|shots| {
+            Overlay::open(event_loop, shots, self.style, area, purpose, settings)
+        });
         match result {
             Ok(overlay) => self.overlay = Some(overlay),
             Err(err) => log::error!("screenshot failed: {err:#}"),
@@ -587,18 +598,19 @@ impl App {
 
     fn request(&mut self, event_loop: &ActiveEventLoop, request: Request) {
         match request {
-            Request::Capture => self.start_capture(event_loop, None, false),
-            Request::Pick => self.start_capture(event_loop, None, true),
+            Request::Capture => self.start_capture(event_loop, None, Purpose::Shot),
+            Request::Pick => self.start_capture(event_loop, None, Purpose::Pick),
             Request::Settings => self.open_settings(event_loop),
         }
     }
 
     fn run_command(&mut self, event_loop: &ActiveEventLoop, command: Command) {
         match command {
-            Command::Capture => self.start_capture(event_loop, None, false),
-            Command::PickColor => self.start_capture(event_loop, None, true),
+            Command::Capture => self.start_capture(event_loop, None, Purpose::Shot),
+            Command::PickColor => self.start_capture(event_loop, None, Purpose::Pick),
+            Command::ScrollPage => self.start_capture(event_loop, None, Purpose::ScrollPage),
             Command::FullScreen => self.copy_full_screen(),
-            Command::RepeatArea => self.start_capture(event_loop, self.last_area, false),
+            Command::RepeatArea => self.start_capture(event_loop, self.last_area, Purpose::Shot),
             Command::Delay(seconds) => self.capture_later(seconds),
             Command::History(index) => self.pin_from_history(event_loop, index),
             Command::ClearHistory => {
@@ -894,6 +906,7 @@ impl ApplicationHandler<UserEvent> for App {
                     scroll.request_redraw();
                 }
             }
+            UserEvent::ScrollEnded => self.finish_scroll(event_loop),
             UserEvent::UpdateChecked(result, manual) => {
                 // The daily check stays quiet unless the user turned it off meanwhile.
                 if !manual && !self.settings.auto_update {
