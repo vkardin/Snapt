@@ -142,5 +142,113 @@
   },
   "screenCancelled": {
     "message": "Ничего не выбрано. Попробуйте ещё раз, когда будете готовы."
+  },
+  "hintArea": {
+    "message": "Выделите мышью или кликните элемент"
+  },
+  "hintVisible": {
+    "message": "То, что сейчас на экране"
+  },
+  "hintPage": {
+    "message": "Прокрутка и склейка в одну картинку"
+  },
+  "hintScreen": {
+    "message": "Любой экран или окно приложения"
+  },
+  "tipLightbox": {
+    "message": "Alt+клик по картинке увеличит её. Правый клик сохранит в PNG или JPG."
+  },
+  "openSettings": {
+    "message": "Настройки"
+  },
+  "website": {
+    "message": "Сайт"
+  },
+  "optTitle": {
+    "message": "Настройки Snapt"
+  },
+  "optHeroTitle": {
+    "message": "Скриншоты прямо в браузере"
+  },
+  "optHeroText": {
+    "message": "Область, видимая часть или вся страница, а потом стрелки, текст и размытие в том же редакторе, что и в приложении для компьютера."
+  },
+  "optShortcuts": {
+    "message": "Горячие клавиши"
+  },
+  "optShortcutsText": {
+    "message": "Скриншот без открытия меню. Клавиши хранит браузер, поэтому меняются они в его настройках."
+  },
+  "optChangeShortcuts": {
+    "message": "Изменить клавиши"
+  },
+  "optShortcutsFirefox": {
+    "message": "В Firefox: откройте about:addons, нажмите на шестерёнку и выберите «Управление горячими клавишами расширений»."
+  },
+  "optNotSet": {
+    "message": "не задана"
+  },
+  "optFeatures": {
+    "message": "Что умеет Snapt"
+  },
+  "featCaptureTitle": {
+    "message": "Четыре вида скриншотов"
+  },
+  "featCaptureText": {
+    "message": "Область или отдельный элемент, видимая часть, вся страница с прокруткой, любой экран или окно."
+  },
+  "featEditorTitle": {
+    "message": "Редактор"
+  },
+  "featEditorText": {
+    "message": "Карандаш, стрелки, фигуры, маркер, текст, нумерация, пикселизация и размытие. Копирование, PNG и JPG."
+  },
+  "featSaveTitle": {
+    "message": "Сохранить как PNG / JPG"
+  },
+  "featSaveText": {
+    "message": "Правый клик по любой картинке, включая WebP, AVIF и SVG, и она сохранится в формате, который откроет любая программа."
+  },
+  "featLightboxTitle": {
+    "message": "Просмотр картинок"
+  },
+  "featLightboxText": {
+    "message": "Alt+клик откроет картинку поверх страницы. Увеличение до пикселей, перемещение и поворот."
+  },
+  "optPrivacy": {
+    "message": "Всё происходит на вашем компьютере. У Snapt нет серверов, аккаунтов и слежки."
+  },
+  "optMore": {
+    "message": "Другие проекты автора"
+  },
+  "optMoreText": {
+    "message": "Бесплатные и с открытым кодом, как и Snapt."
+  },
+  "appDesktop": {
+    "message": "Snapt для компьютера"
+  },
+  "appDesktopMeta": {
+    "message": "Приложение · Windows, macOS, Linux"
+  },
+  "appDesktopText": {
+    "message": "Тот же редактор для всего экрана: одна клавиша, выделили, подписали, готово."
+  },
+  "appExtensionMeta": {
+    "message": "Расширение · Chrome, Edge, Firefox"
+  },
+  "appLevelerText": {
+    "message": "Выравнивает громкость любого видео: тихие диалоги и громкие сцены звучат одинаково."
+  },
+  "appGlowText": {
+    "message": "Мягкая подсветка в цветах картинки вокруг любого видео, как LED-лента за телевизором."
+  },
+  "license": {
+    "message": "лицензия MIT"
+  },
+  "source": {
+    "message": "Исходный код"
+  },
+  "reportBug": {
+    "message": "Сообщить об ошибке"
   }
 }

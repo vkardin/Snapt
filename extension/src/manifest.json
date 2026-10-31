@@ -3,7 +3,7 @@
   "name": "__MSG_name__",
   "short_name": "Snapt",
   "description": "__MSG_description__",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "default_locale": "en",
   "homepage_url": "https://vkardin.github.io/snapt/",
   "icons": {
@@ -19,6 +19,10 @@
       "16": "icons/16.png",
       "32": "icons/32.png"
     }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
   },
   "background": {
     "service_worker": "background.js"

@@ -44,6 +44,9 @@ This writes the unpacked extension to `extension/dist/chrome` and
 - `wasm/`: the editor core, a thin C-style API over the desktop app's modules.
 - `src/background.js`: captures, the context menu, fetching and saving images.
 - `src/popup.*`: the toolbar popup.
+- `src/options.*`: the settings page: shortcuts, what the extension does and
+  links to the author's other apps.
+- `src/img`: the logos used by the popup, the settings page and the editor.
 - `src/editor.*`: the editor page.
 - `src/convert.js`: PNG / JPG conversion with `OffscreenCanvas`.
 - `src/offscreen.*`: Chrome only, decodes SVG for the service worker.

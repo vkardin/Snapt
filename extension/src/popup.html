@@ -5,23 +5,38 @@
 <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <header><img src="icons/32.png" alt="" width="20" height="20"> Snapt</header>
-  <button data-mode="area">
-    <svg viewBox="0 0 24 24"><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>
-    <span data-i18n="captureArea"></span><kbd data-command="area"></kbd>
-  </button>
-  <button data-mode="visible">
-    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8h18"/></svg>
-    <span data-i18n="captureVisible"></span><kbd data-command="visible"></kbd>
-  </button>
-  <button data-mode="page">
-    <svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>
-    <span data-i18n="capturePage"></span><kbd data-command="page"></kbd>
-  </button>
-  <button data-mode="screen">
-    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
-    <span data-i18n="captureScreen"></span><kbd data-command="screen"></kbd>
-  </button>
+  <header class="top">
+    <img src="img/logo.svg" alt="" width="30" height="30">
+    <div class="title"><b>Snapt</b><span class="version"></span></div>
+    <button class="icon" data-action="settings" data-i18n-title="openSettings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </header>
+  <main>
+    <button class="shot" data-mode="area">
+      <i><svg viewBox="0 0 24 24"><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg></i>
+      <span><b data-i18n="captureArea"></b><small data-i18n="hintArea"></small></span><kbd data-command="area"></kbd>
+    </button>
+    <button class="shot" data-mode="visible">
+      <i><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8h18"/></svg></i>
+      <span><b data-i18n="captureVisible"></b><small data-i18n="hintVisible"></small></span><kbd data-command="visible"></kbd>
+    </button>
+    <button class="shot" data-mode="page">
+      <i><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/></svg></i>
+      <span><b data-i18n="capturePage"></b><small data-i18n="hintPage"></small></span><kbd data-command="page"></kbd>
+    </button>
+    <button class="shot" data-mode="screen">
+      <i><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></i>
+      <span><b data-i18n="captureScreen"></b><small data-i18n="hintScreen"></small></span><kbd data-command="screen"></kbd>
+    </button>
+  </main>
+  <footer>
+    <p class="tip"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M11 8v6M8 11h6"/></svg><span data-i18n="tipLightbox"></span></p>
+    <nav>
+      <button class="link" data-action="settings" data-i18n="openSettings"></button>
+      <a class="link" href="https://vkardin.github.io/snapt/" target="_blank" rel="noopener" data-i18n="website"></a>
+    </nav>
+  </footer>
   <script src="popup.js"></script>
 </body>
 </html>

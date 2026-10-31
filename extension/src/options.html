@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snapt</title>
+<link rel="icon" href="icons/32.png">
+<link rel="stylesheet" href="options.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <span class="brand"><img src="img/logo.svg" alt="" width="30" height="30">Snapt</span>
+    <span class="version"></span>
+    <nav>
+      <a href="https://vkardin.github.io/snapt/" target="_blank" rel="noopener" data-i18n="website"></a>
+      <a href="https://github.com/vkardin/snapt" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap">
+    <h1 data-i18n="optHeroTitle"></h1>
+    <p class="lead" data-i18n="optHeroText"></p>
+  </div>
+</section>
+
+<main class="wrap">
+  <section>
+    <h2 data-i18n="optShortcuts"></h2>
+    <p class="sub" data-i18n="optShortcutsText"></p>
+    <div class="card keys">
+      <ul class="shortcuts"></ul>
+      <div class="keys-foot">
+        <button class="btn" data-action="shortcuts">
+          <svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
+          <span data-i18n="optChangeShortcuts"></span>
+        </button>
+        <p class="hint" hidden></p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 data-i18n="optFeatures"></h2>
+    <div class="grid">
+      <article class="card feature">
+        <i><svg viewBox="0 0 24 24"><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg></i>
+        <h3 data-i18n="featCaptureTitle"></h3><p data-i18n="featCaptureText"></p>
+      </article>
+      <article class="card feature">
+        <i><svg viewBox="0 0 24 24"><path d="M5 19 19 5M19 5h-7M19 5v7"/></svg></i>
+        <h3 data-i18n="featEditorTitle"></h3><p data-i18n="featEditorText"></p>
+      </article>
+      <article class="card feature">
+        <i><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></i>
+        <h3 data-i18n="featSaveTitle"></h3><p data-i18n="featSaveText"></p>
+      </article>
+      <article class="card feature">
+        <i><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M11 8v6M8 11h6"/></svg></i>
+        <h3 data-i18n="featLightboxTitle"></h3><p data-i18n="featLightboxText"></p>
+      </article>
+    </div>
+    <p class="privacy"><svg viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.4 8 8 9 4.6-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg><span data-i18n="optPrivacy"></span></p>
+  </section>
+
+  <section>
+    <h2 data-i18n="optMore"></h2>
+    <p class="sub" data-i18n="optMoreText"></p>
+    <div class="grid apps">
+      <a class="card app app-snapt" href="https://vkardin.github.io/snapt/" target="_blank" rel="noopener">
+        <img src="img/logo.svg" alt="" width="44" height="44">
+        <div><h3 data-i18n="appDesktop"></h3><small data-i18n="appDesktopMeta"></small><p data-i18n="appDesktopText"></p></div>
+      </a>
+      <a class="card app app-leveler" href="https://vkardin.github.io/leveler/" target="_blank" rel="noopener">
+        <img src="img/leveler.svg" alt="" width="44" height="44">
+        <div><h3>Leveler</h3><small data-i18n="appExtensionMeta"></small><p data-i18n="appLevelerText"></p></div>
+      </a>
+      <a class="card app app-glow" href="https://vkardin.github.io/video-glow/" target="_blank" rel="noopener">
+        <img src="img/video-glow.svg" alt="" width="44" height="44">
+        <div><h3>Video Glow</h3><small data-i18n="appExtensionMeta"></small><p data-i18n="appGlowText"></p></div>
+      </a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© vkardin · <a href="https://github.com/vkardin/snapt/blob/main/LICENSE" target="_blank" rel="noopener" data-i18n="license"></a></span>
+    <span><a href="https://github.com/vkardin/snapt" target="_blank" rel="noopener" data-i18n="source"></a> · <a href="https://github.com/vkardin/snapt/issues" target="_blank" rel="noopener" data-i18n="reportBug"></a></span>
+  </div>
+</footer>
+<script src="options.js"></script>
+</body>
+</html>
