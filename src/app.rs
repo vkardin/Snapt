@@ -339,7 +339,8 @@ impl App {
             return;
         }
         let settings = &self.settings;
-        let result = capture::all_monitors()
+        // The picker reads the pixels under the pointer, so it never gets a drawn one.
+        let result = capture::all_monitors(settings.capture_cursor && !pick)
             .and_then(|shots| Overlay::open(event_loop, shots, self.style, area, pick, settings));
         match result {
             Ok(overlay) => self.overlay = Some(overlay),
@@ -494,7 +495,7 @@ impl App {
         if !platform::screen_access() {
             return;
         }
-        match capture::all_monitors() {
+        match capture::all_monitors(self.settings.capture_cursor) {
             Ok(shots) => {
                 let shot = capture::stitch(&shots);
                 if let Err(err) = self.copy(&shot) {

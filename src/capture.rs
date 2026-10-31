@@ -24,8 +24,9 @@ pub struct Bounds {
     pub h: i32,
 }
 
-/// Captures every monitor. Monitors that fail are skipped with a warning.
-pub fn all_monitors() -> Result<Vec<Shot>> {
+/// Captures every monitor, with the mouse pointer drawn in when `cursor` is set.
+/// Monitors that fail are skipped with a warning.
+pub fn all_monitors(cursor: bool) -> Result<Vec<Shot>> {
     let monitors = Monitor::all().context("failed to list monitors")?;
     let mut shots = Vec::new();
     #[cfg(target_os = "linux")]
@@ -45,7 +46,29 @@ pub fn all_monitors() -> Result<Vec<Shot>> {
     for shot in &mut shots {
         shot.windows = on_shot(&windows, shot);
     }
+    if cursor && let Some(pointer) = crate::cursor::position() {
+        draw_pointer(&mut shots, &monitors, pointer);
+    }
     Ok(shots)
+}
+
+/// Draws the pointer onto the shot it is over, sized for that monitor.
+fn draw_pointer(shots: &mut [Shot], monitors: &[Monitor], (x, y): (f64, f64)) {
+    for shot in shots {
+        let px = ((x - shot.x as f64) * shot.scale as f64) as f32;
+        let py = ((y - shot.y as f64) * shot.scale as f64) as f32;
+        let (w, h) = shot.image.dimensions();
+        if px < 0.0 || py < 0.0 || px >= w as f32 || py >= h as f32 {
+            continue;
+        }
+        let scale = monitors
+            .iter()
+            .find(|m| m.x().ok() == Some(shot.x) && m.y().ok() == Some(shot.y))
+            .and_then(|m| m.scale_factor().ok())
+            .unwrap_or(shot.scale);
+        crate::cursor::draw(&mut shot.image, px, py, scale.max(1.0));
+        return;
+    }
 }
 
 fn capture_each(monitors: &[Monitor]) -> Vec<Shot> {
