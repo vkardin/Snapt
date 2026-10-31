@@ -101,7 +101,8 @@ impl Scroll {
         let context = softbuffer::Context::new(event_loop.owned_display_handle())
             .map_err(|e| anyhow::anyhow!("failed to start the renderer: {e}"))?;
         let attributes = Window::default_attributes()
-            .with_title("Snapt")
+            // Its own title tells the windows apart if one ever shows as a bare title bar.
+            .with_title("Snapt panel")
             .with_decorations(false)
             .with_resizable(false)
             .with_window_level(WindowLevel::AlwaysOnTop)
@@ -159,6 +160,11 @@ impl Scroll {
         match event {
             WindowEvent::CloseRequested => return Some(ScrollAction::Cancel),
             WindowEvent::RedrawRequested => self.redraw(),
+            // Without a taskbar button a minimized panel is a bare title bar, so it comes back.
+            WindowEvent::Resized(size) if size.width == 0 || size.height == 0 => {
+                log::warn!("the recording panel was minimized; restoring it");
+                self.window.set_minimized(false);
+            }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button: MouseButton::Left,

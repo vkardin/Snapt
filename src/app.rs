@@ -717,6 +717,13 @@ impl App {
                 };
                 notice = self.set_replace_mode(mode);
             }
+            Action::RestoreSystem => {
+                if self.give_back() {
+                    self.settings.replace_system = ReplaceMode::Off;
+                } else {
+                    notice = Some(Notice::ReplaceFailed);
+                }
+            }
             Action::ReplaceMode(mode) => {
                 let was_on = self.settings.replace_system.is_on();
                 notice = self.set_replace_mode(mode);
@@ -961,6 +968,7 @@ impl ApplicationHandler<UserEvent> for App {
         if let WindowEvent::Resized(size) = &event
             && (size.width == 0 || size.height == 0)
         {
+            log::warn!("a screenshot window was minimized; closing the screenshot");
             self.finish_capture(event_loop, Outcome::Cancel);
             return;
         }
