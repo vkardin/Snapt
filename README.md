@@ -46,8 +46,8 @@ No accounts, no cloud, a few megabytes on disk.
 - From the tray: copy the full screen in one click, take a screenshot after 3, 5 or 10
   seconds, select the last area again, and reopen your recent screenshots, or pin the
   last one from anywhere with a shortcut of your choice.
-- A settings window with three pages: general options, a shortcut for every action, and
-  switches to turn off the features you don't use.
+- A settings window with four pages: general options, a shortcut for every action,
+  switches to turn off the features you don't use, and switches to hide editor tools.
 - In English, Russian and Ukrainian, and it updates itself from GitHub Releases.
 
 Planned: Flatpak and code-signed installers.
@@ -138,6 +138,8 @@ Pick **Settings…** in the tray menu. There you can:
   the keys are already taken;
 - on **Features**, turn off text recognition, scrolling screenshots, pinning, image search,
   printing, video recording or the color picker; their buttons and shortcuts go away;
+- on **Editor**, turn off any drawing tool, from the pen to blur, spotlight and crop; it
+  leaves the toolbar and its key stops working;
 - let Snapt replace the system screenshot tool: on Windows, PrtSc and Win+Shift+S open Snapt
   instead of the Snipping Tool, Snapt can be picked for the `ms-screenclip` and
   `ms-screensketch` links (Windows asks you to confirm that one), and Snapt either asks first

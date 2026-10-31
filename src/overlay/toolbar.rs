@@ -49,6 +49,37 @@ const TOOLS: [Button; 15] = [
     Button::Undo,
     Button::Close,
 ];
+/// The setting that turns `tool` on and off.
+pub fn tool_feature(tool: Tool) -> crate::settings::Feature {
+    use crate::settings::Feature;
+    match tool {
+        Tool::Pen => Feature::Pen,
+        Tool::Line => Feature::Line,
+        Tool::Arrow => Feature::Arrow,
+        Tool::Rect => Feature::Rect,
+        Tool::Ellipse => Feature::Ellipse,
+        Tool::Marker => Feature::Marker,
+        Tool::Text => Feature::Text,
+        Tool::Number => Feature::Number,
+        Tool::Pixelate => Feature::Pixelate,
+        Tool::Blur => Feature::Blur,
+        Tool::Spotlight => Feature::Spotlight,
+    }
+}
+
+/// The tool column, without the tools turned off in the settings.
+fn tools() -> Vec<Button> {
+    use crate::settings::{Feature, enabled};
+    TOOLS
+        .into_iter()
+        .filter(|b| match b {
+            Button::Tool(tool) => enabled(tool_feature(*tool)),
+            Button::Crop => enabled(Feature::Crop),
+            _ => true,
+        })
+        .collect()
+}
+
 /// The action buttons, without the features turned off in the settings.
 fn actions() -> Vec<Button> {
     use crate::settings::{Feature, enabled};
@@ -160,7 +191,8 @@ impl Toolbar {
 
         // Tools: a column right of the selection, bottom-aligned with it.
         let tools_w = button + 2 * pad;
-        let tools_h = TOOLS.len() as i32 * button + 2 * pad;
+        let tool_buttons = tools();
+        let tools_h = tool_buttons.len() as i32 * button + 2 * pad;
         let tools_x = if sel.right() + gap + tools_w <= width {
             sel.right() + gap
         } else if sel.x - gap - tools_w >= 0 {
@@ -201,7 +233,7 @@ impl Toolbar {
         }
 
         let mut buttons = Vec::new();
-        for (i, &b) in TOOLS.iter().enumerate() {
+        for (i, &b) in tool_buttons.iter().enumerate() {
             let r = Rect {
                 x: tools.x + pad,
                 y: tools.y + pad + i as i32 * button,

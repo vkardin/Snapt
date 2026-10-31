@@ -92,10 +92,23 @@ pub enum Feature {
     Scroll,
     Record,
     Picker,
+    // The editor's tools; they leave the toolbar and their keys stop working.
+    Pen,
+    Line,
+    Arrow,
+    Rect,
+    Ellipse,
+    Marker,
+    Text,
+    Number,
+    Pixelate,
+    Blur,
+    Spotlight,
+    Crop,
 }
 
 impl Feature {
-    pub const ALL: [Feature; 7] = [
+    pub const ALL: [Feature; 19] = [
         Feature::Recognize,
         Feature::Search,
         Feature::Print,
@@ -103,6 +116,18 @@ impl Feature {
         Feature::Scroll,
         Feature::Record,
         Feature::Picker,
+        Feature::Pen,
+        Feature::Line,
+        Feature::Arrow,
+        Feature::Rect,
+        Feature::Ellipse,
+        Feature::Marker,
+        Feature::Text,
+        Feature::Number,
+        Feature::Pixelate,
+        Feature::Blur,
+        Feature::Spotlight,
+        Feature::Crop,
     ];
 
     fn code(self) -> &'static str {
@@ -114,6 +139,18 @@ impl Feature {
             Feature::Scroll => "scroll",
             Feature::Record => "record",
             Feature::Picker => "picker",
+            Feature::Pen => "pen",
+            Feature::Line => "line",
+            Feature::Arrow => "arrow",
+            Feature::Rect => "rect",
+            Feature::Ellipse => "ellipse",
+            Feature::Marker => "marker",
+            Feature::Text => "text",
+            Feature::Number => "number",
+            Feature::Pixelate => "pixelate",
+            Feature::Blur => "blur",
+            Feature::Spotlight => "spotlight",
+            Feature::Crop => "crop",
         }
     }
 
@@ -657,7 +694,7 @@ mod tests {
             text_size: 28.0,
             history: 0,
             file_name: "shot %d.%m.%Y".into(),
-            disabled: vec![Feature::Pin, Feature::Picker],
+            disabled: vec![Feature::Pin, Feature::Picker, Feature::Blur, Feature::Crop],
         };
         assert_eq!(Settings::parse(&s.to_text()), s);
     }
